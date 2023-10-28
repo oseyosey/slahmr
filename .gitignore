@@ -138,3 +138,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+slahmr/output/
+
+slahmr_dependencies.zip

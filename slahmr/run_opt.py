@@ -42,9 +42,7 @@ from run_vis import run_vis
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-
 N_STAGES = 3
-
 
 def run_opt(cfg, dataset, out_dir, device):
     args = cfg.data
@@ -52,7 +50,9 @@ def run_opt(cfg, dataset, out_dir, device):
     T = dataset.seq_len
     loader = DataLoader(dataset, batch_size=B, shuffle=False)
 
+    ## obs data is the data gathered from 4D human/PHALP
     obs_data = move_to(next(iter(loader)), device)
+    ## cam data is the R&T from SLAM
     cam_data = move_to(dataset.get_camera_data(), device)
     print("OBS DATA", obs_data.keys())
     print("CAM DATA", cam_data.keys())
@@ -86,6 +86,8 @@ def run_opt(cfg, dataset, out_dir, device):
     body_model, fit_gender = load_smpl_body_model(paths.smpl, B * T, device=device)
 
     margs = cfg.model
+    ## All poses are in their own INDEPENDENT camera reference frames.
+    ## But if images are static, then poses should be in the same camear refernce frames. 
     base_model = BaseSceneModel(
         B, T, body_model, pose_prior, fit_gender=fit_gender, **margs
     )
@@ -164,6 +166,8 @@ def run_opt(cfg, dataset, out_dir, device):
 def main(cfg: DictConfig):
     OmegaConf.register_new_resolver("eval", eval)
 
+    # breakpoint()
+
     out_dir = os.getcwd()
     print("out_dir", out_dir)
     Logger.init(f"{out_dir}/opt_log.txt")
@@ -172,8 +176,21 @@ def main(cfg: DictConfig):
     cfg.data.sources = expand_source_paths(cfg.data.sources)
     print("SOURCES", cfg.data.sources)
 
+    """Example
+        SOURCES {'images': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/images/Camera0', 
+                'cameras': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/cameras/Camera0/shot-0', 
+                'tracks': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/track_preds/Camera0', 
+                'shots': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/shot_idcs/Camera0.json'}
+
+    """
+
     dataset = get_dataset_from_cfg(cfg)
     save_track_info(dataset, out_dir)
+
+    ## dataset.data_out dictionary output
+    with open(f"{out_dir}/complete_track_data.json", "w") as f:
+        json.dump(out_dict, f)
+    print("SAVED TRACK INFO")
 
     if cfg.run_opt:
         device = get_device(0)

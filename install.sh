@@ -3,9 +3,9 @@ set -e
 
 export CONDA_ENV_NAME=slahmr
 
-conda create -n $CONDA_ENV_NAME python=3.10 -y
+conda create -p /share/kuleshov/jy928/envs/$CONDA_ENV_NAME python=3.10 -y
 
-conda activate $CONDA_ENV_NAME
+conda activate /share/kuleshov/jy928/envs/$CONDA_ENV_NAME
 
 # install pytorch using pip, update with appropriate cuda drivers if necessary
 pip install torch==1.13.0 torchvision==0.14.0 --index-url https://download.pytorch.org/whl/cu117

@@ -61,6 +61,7 @@ def build_scene_dict(
         T_w2c = torch.eye(4)[None]
 
     T_c2w = torch.linalg.inv(T_w2c)
+    
     # rotate the camera slightly down and translate back and up
     T = cam_util.make_4x4_pose(
         cam_util.rotx(-np.pi / 10), torch.tensor([0, -1, -2])

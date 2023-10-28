@@ -121,6 +121,7 @@ class BaseSceneModel(nn.Module):
             pred_data = self.pred_smpl(init_trans, init_rot, init_pose, init_betas)
             root_loc = pred_data["joints3d"][..., 0, :]  # (B, T, 3)
             init_trans = obs_data["init_trans"]  # (B, T, 3)
+            ## here it's calculating the root translation in the world coordiante frame using R(R_c2w) and T(t_c2w) with init_trans (Root translation in the camera frame)
             init_trans = (
                 torch.einsum("tij,btj->bti", R_c2w, init_trans + root_loc)
                 + t_c2w[None]
@@ -129,17 +130,17 @@ class BaseSceneModel(nn.Module):
         else:
             # initialize trans with reprojected joints
             pred_data = self.pred_smpl(init_trans, init_rot, init_pose, init_betas)
-            init_trans = estimate_initial_trans(
+            init_trans = estimate_initial_trans( ## use focal length and bone lengths to approximate distance from camera or Root translation in the world coordiante frame. 
                 init_pose,
-                pred_data["joints3d_op"],
+                pred_data["joints3d_op"], ## Here the joints3d_op seems to be joints 3d in the world coordiante frame? ##TODO: Joints3d_op + init_trans seems to be the actual world frame 3D info.
                 obs_data["joints2d"],
                 obs_data["intrins"][:, 0],
             )
 
-        self.params.set_param("latent_pose", init_pose_latent)
-        self.params.set_param("betas", init_betas)
-        self.params.set_param("trans", init_trans)
-        self.params.set_param("root_orient", init_rot)
+        self.params.set_param("latent_pose", init_pose_latent) ## pose in the world frame
+        self.params.set_param("betas", init_betas) ## beta in the world frame
+        self.params.set_param("trans", init_trans) ## root translation in the world frame
+        self.params.set_param("root_orient", init_rot) ## root orientation in the world frame 
 
     def get_optim_result(self, **kwargs):
         """

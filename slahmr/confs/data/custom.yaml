@@ -12,6 +12,6 @@ split_cameras: True
 name: ${data.seq}-${data.track_ids}-shot-${data.shot_idx}
 sources:
   images: ${data.root}/images/${data.seq}
-  cameras: ${data.root}/slahmr/cameras/${data.seq}/shot-${data.shot_idx}
-  track: ${data.root}/slahmr/track_preds/${data.seq}
-  shots: ${data.root}/slahmr/shot_idcs/${data.seq}.json
+  cameras: ${data.root}/slahmr/phalp_out/cameras/${data.seq}/shot-${data.shot_idx}
+  track: ${data.root}/slahmr/phalp_out/track_preds/${data.seq} ## added phalp_out/
+  shots: ${data.root}/slahmr/phalp_out/shot_idcs/${data.seq}.json ##

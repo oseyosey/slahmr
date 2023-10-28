@@ -170,6 +170,7 @@ class StageOptimizer(object):
         res_pre = f"{res_dir}/{seq_name}_opt_{self.cur_step:06d}"
         with torch.no_grad():
             pred_dict = self.model.get_optim_result(num_steps=num_steps)
+            ##Important: Collect predicted outputs (latent_pose, trans, root_orient, betas, body pose) into dict
 
         res_dict = detach_all(pred_dict["world"])
         scene_dict = move_to(
@@ -326,6 +327,7 @@ class RootOptimizer(StageOptimizer):
         joints2d_sigma=100,
         **kwargs,
     ):
+        ## optimize global orientation and root translation in the world frame
         param_names = ["trans", "root_orient"]
         super().__init__(self.name, model, param_names, **kwargs)
 

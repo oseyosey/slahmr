@@ -31,6 +31,7 @@ def preprocess_tracks(img_dir, track_dir, shot_dir, overwrite=False):
         print(f"FOUND TRACKS IN {track_dir}")
         return
 
+    # breakpoint()
     print(f"RUNNING PHALP ON {img_dir}")
     track_root, seq = os.path.split(track_dir.rstrip("/"))
     res_root, track_name = os.path.split(track_root)
@@ -39,7 +40,7 @@ def preprocess_tracks(img_dir, track_dir, shot_dir, overwrite=False):
 
     phalp.process_seq(
         [gpu],
-        f"{res_root}/phalp_out",
+        f"{res_root}",
         seq,
         img_dir,
         track_name=track_name,
