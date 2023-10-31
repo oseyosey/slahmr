@@ -7,6 +7,10 @@ import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import DictConfig
 
+import os
+import sys
+
+
 from phalp.configs.base import FullConfig
 from phalp.models.hmar.hmr import HMR2018Predictor
 from phalp.trackers.PHALP import PHALP

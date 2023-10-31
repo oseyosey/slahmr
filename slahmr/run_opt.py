@@ -184,13 +184,30 @@ def main(cfg: DictConfig):
 
     """
 
-    dataset = get_dataset_from_cfg(cfg)
+    dataset = get_dataset_from_cfg(cfg)  ## return class MultiPeopleDataset
     save_track_info(dataset, out_dir)
 
     ## dataset.data_out dictionary output
-    with open(f"{out_dir}/complete_track_data.json", "w") as f:
-        json.dump(out_dict, f)
-    print("SAVED TRACK INFO")
+    import pickle
+    with open(f"{out_dir}/complete_track_data.pkl", "wb") as f:
+        dataset.load_data()
+        pickle.dump(dataset.data_dict, f)
+    print("SAVED COMPLETE TRACK INFO")
+    """
+    # get data for each track
+        data_dict = {
+            "mask_paths": [],
+            "floor_plane": [], ## default ground plane
+            "joints2d": [],
+            "vis_mask": [],
+            "track_interval": [],
+            "init_body_pose": [],
+            "init_root_orient": [],
+            "init_trans": [],
+        }
+    """
+
+
 
     if cfg.run_opt:
         device = get_device(0)
