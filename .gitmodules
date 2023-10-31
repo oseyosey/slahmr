@@ -4,3 +4,6 @@
 [submodule "third-party/ViTPose"]
 	path = third-party/ViTPose
 	url = https://github.com/ViTAE-Transformer/ViTPose.git
+[submodule "GaROT"]
+	path = GaROT
+	url = https://github.com/oseyosey/GaROT.git
