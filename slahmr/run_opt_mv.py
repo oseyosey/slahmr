@@ -166,7 +166,15 @@ def run_opt(cfg, dataset, out_dir, device):
 def main(cfg: DictConfig):
     OmegaConf.register_new_resolver("eval", eval)
 
-    ## Create a list of omegaConf Dict for Multi-view ##
+
+    ### First-stage ###
+    # 1. Run phalp for all views
+    # 2. Obtain GaROT cross-view matching
+    # 3. Obtain SLAHMR for the first view
+    # 4. Solve for PnP to obtain camera pose (R, T)
+
+
+    ### Create a list of omegaConf Dict for Multi-view ###
     cfg_multi = []
     cfg_multi.append(cfg)
     for num_view in range(1, cfg.data.multi_view_num):
@@ -179,7 +187,7 @@ def main(cfg: DictConfig):
     out_dir = os.getcwd() # copies an absolute pathname of the current working directory to the array pointed to by buf, which is of length size.
     print("out_dir", out_dir)
 
-    ## out_dir, construct multi-view output directory ##
+    ### Construct multi-view output directory ###
     out_dir_muli = []
     out_dir_muli.append(out_dir)
     for num_view in range(1, cfg.data.multi_view_num):
@@ -188,11 +196,13 @@ def main(cfg: DictConfig):
         out_dir_muli.append(out_dir_new)
 
 
+    ## Run PHALP for each view ## 
+    dataset_multi = []
     for num_view in range(cfg.data.multi_view_num):     
         if not os.path.exists(f"{out_dir_muli[num_view]}"):
             os.makedirs(f"{out_dir_muli[num_view]}")
-        ## For loop for multi-view
-        Logger.init(f"{out_dir_muli[num_view]}/opt_log.txt") ## Somehow this is problematic without building paths
+        Logger.init(f"{out_dir_muli[num_view]}/opt_log.txt") ## Somehow this is problemtic without building folders (pervious two lines)
+
         # make sure we get all necessary inputs
         cfg_multi[num_view].data.sources = expand_source_paths(cfg_multi[num_view].data.sources)
         print("SOURCES", cfg_multi[num_view].data.sources)
@@ -205,6 +215,7 @@ def main(cfg: DictConfig):
         """
 
         dataset = get_dataset_from_cfg(cfg_multi[num_view])  ## return class MultiPeopleDataset
+        dataset_multi.append(dataset)
         save_track_info(dataset, out_dir_muli[num_view])
 
         ## dataset.data_out dictionary output
@@ -213,6 +224,7 @@ def main(cfg: DictConfig):
             dataset.load_data()
             pickle.dump(dataset.data_dict, f)
         print("SAVED COMPLETE TRACK INFO")
+
         """ Get data for each track
             data_dict = {
                 "mask_paths": [],
@@ -229,19 +241,27 @@ def main(cfg: DictConfig):
     ## Cross view Association ##
     check_cross_view(cfg)
 
-    ### First-stage ###
-    # 1. Run optimization on one view
-    # 2. Obtain GaROT cross-view matching
-    # 3. Solve for PnP to obtain camera pose (R, T)
-
+    ## Run SLAHMR optimization for view 1 ##
     if cfg.run_opt:
         device = get_device(0)
-        run_opt(cfg, dataset, out_dir, device)
+        run_opt(cfg_multi[0], dataset_multi[0], out_dir_muli[0], device)
 
-    if cfg.run_vis:
-        run_vis(
-            cfg, dataset, out_dir, 0, **cfg.get("vis", dict())
-        )
+
+    
+    ## Solve for PnP to obtain Camera Pose ## 
+    
+
+
+    ### Second-stage ###
+    # 1. Run multi-view optimziation 
+    # if cfg.run_opt:
+    #     device = get_device(0)
+    #     run_opt(cfg, dataset, out_dir, device)
+
+    # if cfg.run_vis:
+    #     run_vis(
+    #         cfg, dataset, out_dir, 0, **cfg.get("vis", dict())
+    #     )
 
 
     ### Second-stage ###
