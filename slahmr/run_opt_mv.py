@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from data import get_dataset_from_cfg, expand_source_paths
+from data import get_dataset_from_cfg, expand_source_paths, check_cross_view
 
 from humor.humor_model import HumorModel
 from optim.base_scene import BaseSceneModel
@@ -162,50 +162,77 @@ def run_opt(cfg, dataset, out_dir, device):
         optim.run(obs_data, args.num_iters, out_dir, vis, writer)
 
 
-@hydra.main(version_base=None, config_path="confs", config_name="config.yaml")
+@hydra.main(version_base=None, config_path="confs", config_name="config_mv.yaml")
 def main(cfg: DictConfig):
     OmegaConf.register_new_resolver("eval", eval)
 
-    # breakpoint()
+    ## Create a list of omegaConf Dict for Multi-view ##
+    cfg_multi = []
+    cfg_multi.append(cfg)
+    for num_view in range(1, cfg.data.multi_view_num):
+        import copy 
+        cfg_mv = copy.deepcopy(cfg)
+        cfg_mv.data.seq = f"Camera{num_view}"
+        cfg_multi.append(cfg_mv)
 
-    out_dir = os.getcwd()
+
+    out_dir = os.getcwd() # copies an absolute pathname of the current working directory to the array pointed to by buf, which is of length size.
     print("out_dir", out_dir)
-    Logger.init(f"{out_dir}/opt_log.txt")
 
-    # make sure we get all necessary inputs
-    cfg.data.sources = expand_source_paths(cfg.data.sources)
-    print("SOURCES", cfg.data.sources)
+    ## out_dir, construct multi-view output directory ##
+    out_dir_muli = []
+    out_dir_muli.append(out_dir)
+    for num_view in range(1, cfg.data.multi_view_num):
+        last_segment = out_dir.split('/')[-1]
+        out_dir_new = out_dir.replace(last_segment, cfg_multi[num_view].data.name)
+        out_dir_muli.append(out_dir_new)
 
-    """Example
-        SOURCES {'images': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/images/Camera0', 
-                'cameras': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/cameras/Camera0/shot-0', 
-                'tracks': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/track_preds/Camera0', 
-                'shots': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/shot_idcs/Camera0.json'}
 
-    """
+    for num_view in range(cfg.data.multi_view_num):     
+        if not os.path.exists(f"{out_dir_muli[num_view]}"):
+            os.makedirs(f"{out_dir_muli[num_view]}")
+        ## For loop for multi-view
+        Logger.init(f"{out_dir_muli[num_view]}/opt_log.txt") ## Somehow this is problematic without building paths
+        # make sure we get all necessary inputs
+        cfg_multi[num_view].data.sources = expand_source_paths(cfg_multi[num_view].data.sources)
+        print("SOURCES", cfg_multi[num_view].data.sources)
 
-    dataset = get_dataset_from_cfg(cfg)  ## return class MultiPeopleDataset
-    save_track_info(dataset, out_dir)
+        """ Example
+            SOURCES {'images': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/images/Camera0', 
+                    'cameras': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/cameras/Camera0/shot-0', 
+                    'tracks': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/track_preds/Camera0', 
+                    'shots': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/shot_idcs/Camera0.json'}
+        """
 
-    ## dataset.data_out dictionary output
-    import pickle
-    with open(f"{out_dir}/complete_track_data.pkl", "wb") as f:
-        dataset.load_data()
-        pickle.dump(dataset.data_dict, f)
-    print("SAVED COMPLETE TRACK INFO")
-    """
-    # get data for each track
-        data_dict = {
-            "mask_paths": [],
-            "floor_plane": [], ## default ground plane
-            "joints2d": [],
-            "vis_mask": [],
-            "track_interval": [],
-            "init_body_pose": [],
-            "init_root_orient": [],
-            "init_trans": [],
-        }
-    """
+        dataset = get_dataset_from_cfg(cfg_multi[num_view])  ## return class MultiPeopleDataset
+        save_track_info(dataset, out_dir_muli[num_view])
+
+        ## dataset.data_out dictionary output
+        import pickle
+        with open(f"{out_dir_muli[num_view]}/complete_track_data.pkl", "wb") as f:
+            dataset.load_data()
+            pickle.dump(dataset.data_dict, f)
+        print("SAVED COMPLETE TRACK INFO")
+        """ Get data for each track
+            data_dict = {
+                "mask_paths": [],
+                "floor_plane": [], ## default ground plane
+                "joints2d": [],
+                "vis_mask": [],
+                "track_interval": [],
+                "init_body_pose": [],
+                "init_root_orient": [],
+                "init_trans": [],
+            }
+        """
+
+    ## Cross view Association ##
+    check_cross_view(cfg)
+
+    ### First-stage ###
+    # 1. Run optimization on one view
+    # 2. Obtain GaROT cross-view matching
+    # 3. Solve for PnP to obtain camera pose (R, T)
 
     if cfg.run_opt:
         device = get_device(0)
@@ -215,6 +242,10 @@ def main(cfg: DictConfig):
         run_vis(
             cfg, dataset, out_dir, 0, **cfg.get("vis", dict())
         )
+
+
+    ### Second-stage ###
+    # 1. Run optimization on multi-view
 
 
 if __name__ == "__main__":

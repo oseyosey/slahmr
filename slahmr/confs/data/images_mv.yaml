@@ -1,0 +1,30 @@
+## Developing config file for folder images
+
+type: images
+split: val
+root: /share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2  # put your videos in root/videos/vid.mp4
+video_dir: videos
+seq: Camera0
+ext: mp4
+src_path: ${data.root}/${data.video_dir}/${data.seq}.${data.ext}
+frame_opts:
+  ext: png
+  fps: 25
+  start_sec: 0
+  end_sec: -1
+use_cams: True
+track_ids: "all"
+shot_idx: 0
+start_idx: 1
+end_idx: 50
+split_cameras: True
+name: ${data.seq}-${data.track_ids}-shot-${data.shot_idx}-${data.start_idx}-${data.end_idx}
+sources:
+  images: ${data.root}/images/${data.seq}
+  cameras: ${data.root}/slahmr/phalp_out/cameras/${data.seq}/shot-${data.shot_idx}
+  tracks: ${data.root}/slahmr/phalp_out/track_preds/${data.seq}
+  shots: ${data.root}/slahmr/phalp_out/shot_idcs/${data.seq}.json
+  crossview: ${data.root}/slahmr/phalp_out
+## GAROT Implemenation
+multi_view: True
+multi_view_num: 2

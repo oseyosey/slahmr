@@ -20,6 +20,36 @@ def preprocess_frames(img_dir, src_path, overwrite=False, **kwargs):
     out = video_to_frames(src_path, img_dir, overwrite=overwrite, **kwargs)
     assert out == 0, "FAILED FRAME EXTRACTION"
 
+def preprocess_crossview(img_dir, track_dir, shot_dir, overwrite=False):
+    """
+    :param img_dir, img_dir is the path to the multiview images, img_dir/Camera0, img_dir/Camera1
+    :param track_dir, expected format: res_root/track_name/sequence
+    :param shot_dir, expected format: res_root/shot_name/sequence
+    """
+    # ### Needs fixing
+    # if not overwrite and is_nonempty(track_dir):
+    #     print(f"FOUND TRACKS IN {track_dir}")
+    #     return
+
+    breakpoint()
+    segments = img_dir.split('/')
+    img_dir_source = '/'.join(segments[:-1])
+    print(f"RUNNING CrossView on {img_dir_source}")
+    track_root, seq = os.path.split(track_dir.rstrip("/"))
+    res_root, track_name = os.path.split(track_root)
+    shot_name = shot_dir.rstrip("/").split("/")[-2]
+    gpu = os.environ.get("CUDA_VISIBLE_DEVICES", 0)
+
+    phalp.process_seq_crossview(
+        [gpu],
+        f"{res_root}",
+        seq,
+        img_dir_source,
+        track_name=track_name,
+        shot_name=shot_name,
+        overwrite=overwrite,
+    )
+
 
 def preprocess_tracks(img_dir, track_dir, shot_dir, overwrite=False):
     """

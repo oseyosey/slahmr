@@ -15,7 +15,7 @@ from util.logger import Logger
 from geometry.camera import invert_camera
 
 from .tools import read_keypoints, read_mask_path, load_smpl_preds
-from .vidproc import preprocess_cameras, preprocess_frames, preprocess_tracks
+from .vidproc import preprocess_cameras, preprocess_frames, preprocess_tracks, preprocess_crossview
 
 
 """
@@ -70,6 +70,15 @@ def check_data_sources(args):
     preprocess_tracks(args.sources.images, args.sources.tracks, args.sources.shots)
     preprocess_cameras(args, overwrite=args.get("overwrite_cams", False))
 
+
+def check_cross_view(cfg):
+    args = cfg.data
+    if not args.use_cams:
+        args.sources.cameras = ""
+
+    args.sources = expand_source_paths(args.sources)
+    preprocess_crossview(args.sources.images, args.sources.tracks, args.sources.shots)
+    
 
 class MultiPeopleDataset(Dataset):
     def __init__(

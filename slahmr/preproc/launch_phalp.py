@@ -37,6 +37,67 @@ def launch_phalp(gpus, seq, img_dir, res_dir, overwrite=False):
     return subprocess.call(cmd, shell=True)
 
 
+def launch_crossview(gpus, seq, img_dir_source, res_dir, res_dir_cross_view, overwrite=False):
+    """
+    run GAROT CrossView using GPU pool
+    """
+    cur_proc = mp.current_process()
+    print("PROCESS", cur_proc.name, cur_proc._identity)
+    # 1-indexed processes
+    worker_id = cur_proc._identity[0] - 1 if len(cur_proc._identity) > 0 else 0
+    gpu = gpus[worker_id % len(gpus)]
+
+    PHALP_DIR = os.path.abspath(f"{__file__}/../")
+    print("PHALP DIR", PHALP_DIR)
+
+    breakpoint()
+
+    ## We probably want to change img_dir_source, and res_dir.
+    
+
+    cmd_args = [
+        f"cd {PHALP_DIR};",
+        f"CUDA_VISIBLE_DEVICES={gpu}",
+        "python cross_view.py",
+        f"video.source={img_dir_source}",
+        f"video.output_dir={res_dir}",
+        f"video.output_dir_cross_view={res_dir_cross_view}",
+        f"overwrite={overwrite}",
+        "detect_shots=True",
+        "video.extract_video=False",
+        "render.enable=False",
+        "GAROT.multi_view=True",
+    ]
+
+    cmd = " ".join(cmd_args)
+    print(cmd)
+    return subprocess.call(cmd, shell=True)
+
+
+
+def process_seq_crossview(gpus,
+    out_root,
+    seq,
+    img_dir_source,
+    out_name="phalp_out",
+    track_name="track_preds",
+    shot_name="shot_idcs",
+    overwrite=False,
+):
+    """
+    Run and export cross_view results
+    """
+    name = os.path.basename(seq)
+    res_root = f"{out_root}/{out_name}/{seq}" ## cannot change...
+
+    res_root_cv = f"{out_root}/cross_view"
+    os.makedirs(res_root_cv, exist_ok=True)
+    # res_dir = os.path.join(res_root, "results")
+    # res_path = f"{res_root}/{name}.pkl"
+    res = launch_crossview(gpus, seq, img_dir_source, res_root, res_root_cv, overwrite)
+    assert res == 0, "Cross view Completed"
+    return 0
+
 def process_seq(
     gpus,
     out_root,

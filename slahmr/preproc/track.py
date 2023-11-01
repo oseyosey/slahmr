@@ -7,14 +7,20 @@ import hydra
 from hydra.core.config_store import ConfigStore
 from omegaconf import DictConfig
 
+
 import os
 import sys
+ROOT_DIR = os.path.abspath(f"{__file__}/../../../")
+# print("PROJ SRC", ROOT_DIR)
+sys.path.append(ROOT_DIR)
+# SRC_DIR = os.path.join(ROOT_DIR, "GaROT")
+# print("GAROT SRC", SRC_DIR)
+# sys.path.append(SRC_DIR)
 
-
-from phalp.configs.base import FullConfig
-from phalp.models.hmar.hmr import HMR2018Predictor
-from phalp.trackers.PHALP import PHALP
-from phalp.utils import get_pylogger
+from GaROT.phalp.configs.base import FullConfig
+from GaROT.phalp.models.hmar.hmr import HMR2018Predictor
+from GaROT.phalp.trackers.PHALP import PHALP
+from GaROT.phalp.utils import get_pylogger
 
 from vitpose_model import ViTPoseModel
 
