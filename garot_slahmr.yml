@@ -1,0 +1,5 @@
+name: slahmr
+channels:
+  - defaults
+  - conda-forge
+prefix: /home/jy928/anaconda3/envs/slahmr
