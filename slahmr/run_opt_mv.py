@@ -48,17 +48,13 @@ N_STAGES = 3
 #TODO
 ### GAROT Implementation ###
 def run_opt_mv(cfg, dataset, out_dir, device):
-    return 
-
-
-def run_opt(cfg, dataset, out_dir, device):
     args = cfg.data
     B = len(dataset)
     T = dataset.seq_len
     loader = DataLoader(dataset, batch_size=B, shuffle=False)
 
     ## obs data is the data gathered from 4D human/PHALP
-    obs_data = move_to(next(iter(loader)), device)
+    obs_data = move_to(next(iter(loader)), device) # move object to device (gpu)
     ## cam data is the R&T from SLAM
     cam_data = move_to(dataset.get_camera_data(), device)
     print("OBS DATA", obs_data.keys())
@@ -67,7 +63,37 @@ def run_opt(cfg, dataset, out_dir, device):
     # save cameras
     cam_R, cam_t = dataset.cam_data.cam2world()
     intrins = dataset.cam_data.intrins
-    save_camera_json(f"cameras.json", cam_R, cam_t, intrins)
+    save_camera_json(f"cameras.json", cam_R, cam_t, intrins) # save camera parameters into json
+
+    # check whether the cameras are static
+    # if static, cannot optimize scale
+    cfg.model.opt_scale &= not dataset.cam_data.is_static
+    Logger.log(f"OPT SCALE {cfg.model.opt_scale}")
+
+
+    return 
+
+
+
+
+### Original SLAHMR Implementation ###
+def run_opt(cfg, dataset, out_dir, device):
+    args = cfg.data
+    B = len(dataset)
+    T = dataset.seq_len
+    loader = DataLoader(dataset, batch_size=B, shuffle=False)
+
+    ## obs data is the data gathered from 4D human/PHALP
+    obs_data = move_to(next(iter(loader)), device) # move object to device (gpu)
+    ## cam data is the R&T from SLAM
+    cam_data = move_to(dataset.get_camera_data(), device)
+    print("OBS DATA", obs_data.keys())
+    print("CAM DATA", cam_data.keys())
+
+    # save cameras
+    cam_R, cam_t = dataset.cam_data.cam2world()
+    intrins = dataset.cam_data.intrins
+    save_camera_json(f"cameras.json", cam_R, cam_t, intrins) # save camera parameters into json
 
     # check whether the cameras are static
     # if static, cannot optimize scale
@@ -75,7 +101,7 @@ def run_opt(cfg, dataset, out_dir, device):
     Logger.log(f"OPT SCALE {cfg.model.opt_scale}")
 
     # loss weights for all stages
-    all_loss_weights = cfg.optim.loss_weights
+    all_loss_weights = cfg.optim.loss_weights # see optim.yaml config file
     assert all(len(wts) == N_STAGES for wts in all_loss_weights.values())
     stage_loss_weights = [
         {k: wts[i] for k, wts in all_loss_weights.items()} for i in range(N_STAGES)
@@ -94,7 +120,7 @@ def run_opt(cfg, dataset, out_dir, device):
 
     margs = cfg.model
     ## All poses are in their own INDEPENDENT camera reference frames.
-    ## But if images are static, then poses should be in the same camear refernce frames. 
+    ## But if images are static, then poses should be in the same camera refernce frames. 
     base_model = BaseSceneModel(
         B, T, body_model, pose_prior, fit_gender=fit_gender, **margs
     )
@@ -261,7 +287,7 @@ def main(cfg: DictConfig):
     print("rt_pairs", rt_pairs)
 
 
-    ### Second-stage ###
+    ### Second-stage: Multi-view Optimization ###
     # 1. Run multi-view optimziation 
     # if cfg.run_opt:
     #     device = get_device(0)

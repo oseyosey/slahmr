@@ -59,6 +59,7 @@ class BaseSceneModel(nn.Module):
 
         self.num_betas = body_model.bm.num_betas
 
+        # Returns the indices of the permutation that maps SMPL to OpenPose # 
         self.smpl2op_map = smpl_to_openpose(
             self.body_model.model_type,
             use_hands=False,
