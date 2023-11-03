@@ -50,10 +50,9 @@ def launch_crossview(gpus, seq, img_dir_source, res_dir, res_dir_cross_view, ove
     PHALP_DIR = os.path.abspath(f"{__file__}/../")
     print("PHALP DIR", PHALP_DIR)
 
-    breakpoint()
-
-    ## We probably want to change img_dir_source, and res_dir.
-    
+    # (Oct 31st)
+    ## breakpoint()
+    ## We probably want to change img_dir_source, and res_dir 
 
     cmd_args = [
         f"cd {PHALP_DIR};",
@@ -96,7 +95,9 @@ def process_seq_crossview(gpus,
     # res_path = f"{res_root}/{name}.pkl"
     res = launch_crossview(gpus, seq, img_dir_source, res_root, res_root_cv, overwrite)
     assert res == 0, "Cross view Completed"
-    return 0
+    
+    # return path directory of cross_view file
+    return res_root_cv
 
 def process_seq(
     gpus,

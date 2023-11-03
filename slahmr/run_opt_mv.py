@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from data import get_dataset_from_cfg, expand_source_paths, check_cross_view
+from pnp.launch_pnp import *
 
 from humor.humor_model import HumorModel
 from optim.base_scene import BaseSceneModel
@@ -43,6 +44,12 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 N_STAGES = 3
+
+#TODO
+### GAROT Implementation ###
+def run_opt_mv(cfg, dataset, out_dir, device):
+    return 
+
 
 def run_opt(cfg, dataset, out_dir, device):
     args = cfg.data
@@ -174,7 +181,7 @@ def main(cfg: DictConfig):
     # 4. Solve for PnP to obtain camera pose (R, T)
 
 
-    ### Create a list of omegaConf Dict for Multi-view ###
+    ## Create a list of omegaConf Dict for Multi-view ##
     cfg_multi = []
     cfg_multi.append(cfg)
     for num_view in range(1, cfg.data.multi_view_num):
@@ -187,7 +194,7 @@ def main(cfg: DictConfig):
     out_dir = os.getcwd() # copies an absolute pathname of the current working directory to the array pointed to by buf, which is of length size.
     print("out_dir", out_dir)
 
-    ### Construct multi-view output directory ###
+    ## Construct multi-view output directory ##
     out_dir_muli = []
     out_dir_muli.append(out_dir)
     for num_view in range(1, cfg.data.multi_view_num):
@@ -239,17 +246,19 @@ def main(cfg: DictConfig):
         """
 
     ## Cross view Association ##
-    check_cross_view(cfg)
+    cv_data_path = f"{cfg_multi[0].data.sources.crossview}/cross_view/cross_view_matching_all_frames_data.pickle"
+    if not os.path.exists(cv_data_path):
+        cv_data_path = check_cross_view(cfg)
 
     ## Run SLAHMR optimization for view 1 ##
+    device = get_device(0)
     if cfg.run_opt:
-        device = get_device(0)
         run_opt(cfg_multi[0], dataset_multi[0], out_dir_muli[0], device)
-
-
     
-    ## Solve for PnP to obtain Camera Pose ## 
-    
+
+    ## Run Multi-view PnP to obtain Camera Pose ##
+    rt_pairs = run_pnp(cfg, out_dir_muli, out_dir_muli[0], cv_data_path, device)
+    print("rt_pairs", rt_pairs)
 
 
     ### Second-stage ###

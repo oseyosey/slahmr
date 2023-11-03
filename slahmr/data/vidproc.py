@@ -31,7 +31,7 @@ def preprocess_crossview(img_dir, track_dir, shot_dir, overwrite=False):
     #     print(f"FOUND TRACKS IN {track_dir}")
     #     return
 
-    breakpoint()
+    # breakpoint()
     segments = img_dir.split('/')
     img_dir_source = '/'.join(segments[:-1])
     print(f"RUNNING CrossView on {img_dir_source}")
@@ -40,7 +40,7 @@ def preprocess_crossview(img_dir, track_dir, shot_dir, overwrite=False):
     shot_name = shot_dir.rstrip("/").split("/")[-2]
     gpu = os.environ.get("CUDA_VISIBLE_DEVICES", 0)
 
-    phalp.process_seq_crossview(
+    cv_data_path = phalp.process_seq_crossview(
         [gpu],
         f"{res_root}",
         seq,
@@ -49,6 +49,8 @@ def preprocess_crossview(img_dir, track_dir, shot_dir, overwrite=False):
         shot_name=shot_name,
         overwrite=overwrite,
     )
+
+    return cv_data_path
 
 
 def preprocess_tracks(img_dir, track_dir, shot_dir, overwrite=False):

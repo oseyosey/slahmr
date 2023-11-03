@@ -77,7 +77,9 @@ def check_cross_view(cfg):
         args.sources.cameras = ""
 
     args.sources = expand_source_paths(args.sources)
-    preprocess_crossview(args.sources.images, args.sources.tracks, args.sources.shots)
+    cv_data_path = preprocess_crossview(args.sources.images, args.sources.tracks, args.sources.shots)
+
+    return cv_data_path
     
 
 class MultiPeopleDataset(Dataset):
