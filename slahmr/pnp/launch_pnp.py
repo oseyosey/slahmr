@@ -88,7 +88,7 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device)
         
         points_3D_world = []
         points_2D_camera = []
-        breakpoint()
+        # breakpoint()
         for t_ in range(frame):
             ## Obtain BBoox from 2D keypoitns at camera coordiante
             joints_2d_data = joints_2d_data_mv[num_view-1][t_] ## num_view - 1 because we didn't store view 0 (world camera)
@@ -111,7 +111,7 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device)
         points_3D_world = np.vstack(points_3D_world)
         points_2D_camera = np.vstack(points_2D_camera)
         
-        breakpoint()
+        # breakpoint()
         print(f"RUNNING RANSAC PnP ROBUST on Camera {num_view}")
         n = int(len(points_3D_world) / (25*5))
 

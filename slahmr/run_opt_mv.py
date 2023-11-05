@@ -43,32 +43,86 @@ from run_vis import run_vis
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
+
+## Multi-view Implementation ##
+from optim.base_scene_mv import BaseSceneModelMV
+
 N_STAGES = 3
 
 #TODO
 ### GAROT Implementation ###
-def run_opt_mv(cfg, dataset, out_dir, device):
+def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, device):
     args = cfg.data
-    B = len(dataset)
-    T = dataset.seq_len
-    loader = DataLoader(dataset, batch_size=B, shuffle=False)
 
-    ## obs data is the data gathered from 4D human/PHALP
-    obs_data = move_to(next(iter(loader)), device) # move object to device (gpu)
-    ## cam data is the R&T from SLAM
-    cam_data = move_to(dataset.get_camera_data(), device)
-    print("OBS DATA", obs_data.keys())
-    print("CAM DATA", cam_data.keys())
-
-    # save cameras
-    cam_R, cam_t = dataset.cam_data.cam2world()
-    intrins = dataset.cam_data.intrins
-    save_camera_json(f"cameras.json", cam_R, cam_t, intrins) # save camera parameters into json
+    ## setting up psuedo B and T (B, the number of sequences will change.)
+    B_INIT = len(dataset_multi[0])
+    T = dataset_multi[0].seq_len
 
     # check whether the cameras are static
     # if static, cannot optimize scale
-    cfg.model.opt_scale &= not dataset.cam_data.is_static
+    cfg.model.opt_scale &= not dataset_multi[0].cam_data.is_static
+    cfg.model.opt_scale = False # Hardcoded for now
     Logger.log(f"OPT SCALE {cfg.model.opt_scale}")
+
+    # loss weights for all stages
+    all_loss_weights = cfg.optim.loss_weights # see optim.yaml config file
+    assert all(len(wts) == N_STAGES for wts in all_loss_weights.values())
+    stage_loss_weights = [
+        {k: wts[i] for k, wts in all_loss_weights.items()} for i in range(N_STAGES)
+    ]
+    max_loss_weights = {k: max(wts) for k, wts in all_loss_weights.items()}
+
+    # load pose prior models
+    cfg = resolve_cfg_paths(cfg)
+    paths = cfg.paths
+    Logger.log(f"Loading pose prior from {paths.vposer}")
+    pose_prior, _ = load_vposer(paths.vposer)
+    pose_prior = pose_prior.to(device)
+
+
+    ## Multi-view Implementation ##
+    obs_data_multi = []
+    body_model_multi = []
+    for view_num in range(cfg.data.multi_view_num):
+        dataset = dataset_multi[view_num]
+        B = len(dataset_multi[view_num])
+        loader = DataLoader(dataset_multi[view_num], batch_size=B, shuffle=False)
+
+        ## obs data is the data gathered from 4D human/PHALP
+        obs_data = move_to(next(iter(loader)), device) # move object to device (gpu)
+        obs_data_multi.append(obs_data)
+
+        if view_num == 0:
+            ## cam data is the R&T from SLAM
+            cam_data = move_to(dataset_multi[view_num].get_camera_data(), device)
+            print(f"OBS DATA for view {view_num}: ", obs_data.keys())
+            print(f"CAM DATA foor view {view_num}: ", cam_data.keys())
+            # save cameras
+            cam_R, cam_t = dataset.cam_data.cam2world()
+            intrins = dataset.cam_data.intrins
+            save_camera_json(f"cameras.json", cam_R, cam_t, intrins) # save camera parameters into json
+
+        # body Model requires different batch size for each view 
+        Logger.log(f"Loading body model from {paths.smpl}")
+        body_model, fit_gender = load_smpl_body_model(paths.smpl, B * T, device=device)
+        body_model_multi.append(body_model)
+
+    margs = cfg.model
+
+
+    ##TODO Move rt_pairs to device
+    # rt_pairs = move_to(rt_pairs.to_dict()), device)
+
+    ## All poses are in their own INDEPENDENT camera reference frames.
+    ## But if images are static, then poses should be in the same camera refernce frames. 
+    base_model = BaseSceneModelMV(
+        B_INIT, T, body_model_multi, pose_prior, fit_gender=fit_gender, rt_pairs=rt_pairs, **margs
+    )
+    
+    base_model.initialize(obs_data_multi, cam_data) ## TODO
+    base_model.to(device)
+
+
 
 
     return 
@@ -286,12 +340,14 @@ def main(cfg: DictConfig):
     rt_pairs = run_pnp(cfg, out_dir_muli, out_dir_muli[0], cv_data_path, device)
     print("rt_pairs", rt_pairs)
 
+    breakpoint()
+
 
     ### Second-stage: Multi-view Optimization ###
     # 1. Run multi-view optimziation 
-    # if cfg.run_opt:
-    #     device = get_device(0)
-    #     run_opt(cfg, dataset, out_dir, device)
+    if cfg.run_opt_mv:
+        device = get_device(0)
+        run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, device)
 
     # if cfg.run_vis:
     #     run_vis(

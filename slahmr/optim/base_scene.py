@@ -43,7 +43,8 @@ class BaseSceneModel(nn.Module):
         fit_gender="neutral",
         use_init=False,
         opt_cams=False,
-        opt_scale=True,
+        opt_scale=False, # Assume static camera
+        rt_list = None,
         **kwargs,
     ):
         super().__init__()
@@ -76,10 +77,13 @@ class BaseSceneModel(nn.Module):
         print("OPT CAMERAS", self.opt_cams)
         self.params = CameraParams(batch_size)
 
-    def initialize(self, obs_data, cam_data):
+        self.rt_list = rt_list
+
+    def initialize(self, obs_data, cam_data, ):
         Logger.log("Initializing scene model with observed data")
 
         # initialize cameras
+        # If static, cameras stay the same (not being optimized)
         self.params.set_cameras(
             cam_data,
             opt_scale=self.opt_scale,
@@ -90,7 +94,7 @@ class BaseSceneModel(nn.Module):
         # initialize body params
         B, T = self.batch_size, self.seq_len
         device = next(iter(cam_data.values())).device
-        init_betas = torch.zeros(B, self.num_betas, device=device)
+        init_betas = torch.zeros(B, self.num_betas, device=device) # we need to figure out B (because every view can see only a subset of people)
 
         if self.use_init and "init_body_pose" in obs_data:
             init_pose = obs_data["init_body_pose"][:, :, :J_BODY, :]
@@ -107,7 +111,7 @@ class BaseSceneModel(nn.Module):
         if self.use_init and "init_root_orient" in obs_data:
             init_rot = obs_data["init_root_orient"]  # (B, T, 3)
             init_rot_mat = angle_axis_to_rotation_matrix(init_rot)
-            init_rot_mat = torch.einsum("tij,btjk->btik", R_c2w, init_rot_mat)
+            init_rot_mat = torch.einsum("tij,btjk->btik", R_c2w, init_rot_mat) # Transform init_root_orient from camera frame to world frame
             init_rot = rotation_matrix_to_angle_axis(init_rot_mat)
         else:
             init_rot = (
@@ -138,7 +142,9 @@ class BaseSceneModel(nn.Module):
                 obs_data["intrins"][:, 0],
             )
 
-        self.params.set_param("latent_pose", init_pose_latent) ## pose in the world frame
+
+
+        self.params.set_param("latent_pose", init_pose_latent) ## pose in the world frame? Seems to be passed through a function that encodes aa body pose to VPoser latent space.
         self.params.set_param("betas", init_betas) ## beta in the world frame
         self.params.set_param("trans", init_trans) ## root translation in the world frame
         self.params.set_param("root_orient", init_rot) ## root orientation in the world frame 

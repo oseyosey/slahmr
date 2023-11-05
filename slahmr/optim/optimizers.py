@@ -331,6 +331,8 @@ class RootOptimizer(StageOptimizer):
         param_names = ["trans", "root_orient"]
         super().__init__(self.name, model, param_names, **kwargs)
 
+        ## TODO Here they defined the root loss (what we need to change for multi-view!)
+        ## TODO know if robust_loss_type = None (meaning they didn't use the points3D_loss)
         self.loss = RootLoss(
             all_loss_weights[self.stage],
             ignore_op_joints=OP_IGNORE_JOINTS,
