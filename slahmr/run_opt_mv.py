@@ -116,7 +116,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, device):
     ## All poses are in their own INDEPENDENT camera reference frames.
     ## But if images are static, then poses should be in the same camera refernce frames. 
     base_model = BaseSceneModelMV(
-        B_INIT, T, body_model_multi, pose_prior, fit_gender=fit_gender, rt_pairs=rt_pairs, **margs
+        B_INIT, T, body_model_multi, pose_prior, fit_gender=fit_gender, rt_pairs=rt_pairs, view_nums=cfg.data.multi_view_num, **margs
     )
     
     base_model.initialize(obs_data_multi, cam_data) ## TODO
