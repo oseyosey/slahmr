@@ -94,14 +94,13 @@ class BaseSceneModelMV(nn.Module):
         self.rt_pairs_tensor = None
         self.pairing_info = None
 
-    def initialize(self, obs_data_list, cam_data):
+    def initialize(self, obs_data_list, cam_data, slahmr_data_init, debug=False):
         """
         Intializating Multi-view people in the world
         obs_data_list: list of observed data in data loader format
+        slahmr_data_init: SLAHMR results in the world frame in dictionary format
         """
         Logger.log("Initializing scene model with observed data from multiple views")
-
-        breakpoint()
 
         # initialize cameras
         self.params.set_cameras(
@@ -119,9 +118,14 @@ class BaseSceneModelMV(nn.Module):
             obs_data = obs_data_list[num_view]
             B, T = obs_data['joints2d'].shape[0], self.seq_len
             device = next(iter(cam_data.values())).device
+            
             init_betas = torch.zeros(B, self.num_betas, device=device)
 
-            if self.use_init and "init_body_pose" in obs_data:
+            if self.use_init and num_view == 0: # Appending SLAHMR Results
+                init_pose = slahmr_data_init["pose_body"].view(3, 49, 21, 3) # origionally (3, 49, 63)
+                init_pose = init_pose[:, :, :J_BODY, :]
+                init_pose_latent = self.pose2latent(init_pose)
+            elif self.use_init and "init_body_pose" in obs_data:
                 init_pose = obs_data["init_body_pose"][:, :, :J_BODY, :]
                 init_pose_latent = self.pose2latent(init_pose)
             else:
@@ -145,7 +149,12 @@ class BaseSceneModelMV(nn.Module):
                 R_c2w = R_w2c.transpose(-1, -2)
                 t_c2w = -torch.einsum("tij,tj->ti", R_c2w, t_w2c)
  
-            if self.use_init and "init_root_orient" in obs_data:
+            if self.use_init and num_view == 0: ## Appending SLAHMR Results
+                init_rot = slahmr_data_init["root_orient"] 
+                init_rot_mat = angle_axis_to_rotation_matrix(init_rot)
+                init_rot_mat = torch.einsum("tij,btjk->btik", R_c2w, init_rot_mat)
+                init_rot = rotation_matrix_to_angle_axis(init_rot_mat)
+            elif self.use_init and "init_root_orient" in obs_data:
                 init_rot = obs_data["init_root_orient"]  # (B, T, 3)
                 init_rot_mat = angle_axis_to_rotation_matrix(init_rot)
                 init_rot_mat = torch.einsum("tij,btjk->btik", R_c2w, init_rot_mat) # Transform init_root_orient from camera frame to world frame
@@ -158,7 +167,16 @@ class BaseSceneModelMV(nn.Module):
                 )
 
             init_trans = torch.zeros(B, T, 3, device=device)
-            if self.use_init and "init_trans" in obs_data:
+            if self.use_init and num_view == 0: ## Appending SLAHMR Results
+                pred_data = self.pred_smpl(init_trans, init_rot, init_pose, init_betas) # Note that here init_trans is zeros tensors
+                root_loc = pred_data["joints3d"][..., 0, :]  # (B, T, 3)
+                init_trans = obs_data["init_trans"]  # (B, T, 3)
+                init_trans = (
+                    torch.einsum("tij,btj->bti", R_c2w, init_trans + root_loc)
+                    + t_c2w[None]
+                    - root_loc
+                )
+            elif self.use_init and "init_trans" in obs_data:
                 # must offset by the root location before applying camera to world transform
                 pred_data = self.pred_smpl(init_trans, init_rot, init_pose, init_betas)
                 root_loc = pred_data["joints3d"][..., 0, :]  # (B, T, 3)
@@ -174,14 +192,17 @@ class BaseSceneModelMV(nn.Module):
                 pred_data = self.pred_smpl(init_trans, init_rot, init_pose, init_betas)
                 init_trans = estimate_initial_trans( ## use focal length and bone lengths to approximate distance from camera or Root translation in the world coordiante frame. 
                     init_pose,
-                    pred_data["joints3d_op"], ## Here the joints3d_op seems to be joints 3d in the world coordiante frame? ##TODO: Joints3d_op + init_trans seems to be the actual world frame 3D info.
+                    pred_data["joints3d_op"], ## Here the joints3d_op seems to be joints 3d in the world coordiante frame? ##TODO: Joints3d_op + init_trans seems to be the actual world frame 3D inf?
                     obs_data["joints2d"],
                     obs_data["intrins"][:, 0],
                 )
-            
+
+            ##  Here we are using the 4D Human results for the appearance embedding for view 0 (reference view)
             init_appe = obs_data['init_appe'] if self.use_init and 'init_appe' in obs_data else None
 
-            pred_smpl_data_list.append(pred_data)
+            ## Recompute pred_smpl_data_list in the world frame (with updated init_trans)
+            pred_data_world = self.pred_smpl(init_trans, init_rot, init_pose, init_betas)
+            pred_smpl_data_list.append(pred_data_world)
             rt_pairs_tensor.append((R_w2c, t_w2c))
 
             init_pose_latent_list.append(init_pose_latent)
@@ -194,34 +215,30 @@ class BaseSceneModelMV(nn.Module):
 
 
         self.rt_pairs_tensor = rt_pairs_tensor
-
-
-        ## TODO: Use SLAHMR results for view0 to initialize the world frame SMPL parameters
-        # ## function: swap first element of init_pose_latent, init_betas_list, ... (SMPL Parameters) with optimized SLAHMR results
         
+        if debug:
+            ## 先把所有需要的东西存下来，放在Jupyter Notebook里操作
+            import pickle
+            # Create a dictionary with the variables as keys
+            data_to_store = {
+                "init_pose_latent_list": init_pose_latent_list,  
+                "init_pose_list": init_pose_list,          
+                "init_betas_list": init_betas_list,        
+                "init_trans_list": init_trans_list,        
+                "init_rot_list": init_rot_list,         
+                "pred_smpl_data_list": pred_smpl_data_list,   
+                "obs_data_list": obs_data_list, 
+                "init_appe_list": init_appe_list       
+            }
+            # Path to store the pickle file
+            pickle_file_path = 'stich_world_data.pickle' # save to here '/share/kuleshov/jy928/slahmr/outputs/logs/images-val/2023-11-06/Camera0-all-shot-0-1-50'
+            with open(pickle_file_path, 'wb') as handle:
+                pickle.dump(data_to_store, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                print("Data saved to pickle file")
+            breakpoint()
 
-        ## 先把所有需要的东西存下来，放在Jupyter Notebook里操作
-        import pickle
-        # Create a dictionary with the variables as keys
-        data_to_store = {
-            "init_pose_latent_list": init_pose_latent_list,  
-            "init_pose_list": init_pose_list,          
-            "init_betas_list": init_betas_list,        
-            "init_trans_list": init_trans_list,        
-            "init_rot_list": init_rot_list,         
-            "pred_smpl_data_list": pred_smpl_data_list,   
-            "obs_data_list": obs_data_list, 
-            "init_appe_list": init_appe_list       
-        }
-        # Path to store the pickle file
-        pickle_file_path = 'stich_world_data.pickle' # save to here '/share/kuleshov/jy928/slahmr/outputs/logs/images-val/2023-11-06/Camera0-all-shot-0-1-50'
-        with open(pickle_file_path, 'wb') as handle:
-            pickle.dump(data_to_store, handle, protocol=pickle.HIGHEST_PROTOCOL)
-            print("Data saved to pickle file")
-
-
-        breakpoint()
-        # Obtain world smpl parameters from multi-view smpl parameters through stitching. 
+        
+        ### Obtain world smpl parameters from multi-view smpl parameters through stitching ###
         init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world, matching_obs_data = self.stitch_world_tracklet(init_pose_latent_list, init_betas_list, 
                                                                                                                                    init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list, obs_data_list, device)
 
@@ -230,24 +247,23 @@ class BaseSceneModelMV(nn.Module):
         self.params.set_param("trans", init_trans_world) ## root translation in the world frame
         self.params.set_param("root_orient", init_rot_world) ## root orientation in the world frame 
 
+        if debug:
+            # Create a dictionary with the variables as keys
+            data_to_store_stitched = {
+                "init_pose_latent_world": init_pose_latent_world,  
+                "init_pose_world":  self.latent2pose(init_pose_latent_world), 
+                "init_betas_world": init_betas_world,         
+                "init_trans_world": init_trans_world,        
+                "init_rot_world": init_rot_world   
+            }
+            pickle_file_path = 'stich_world_data_stitched.pickle' # save to here '/share/kuleshov/jy928/slahmr/outputs/logs/images-val/2023-11-06/Camera0-all-shot-0-1-50'
+            with open(pickle_file_path, 'wb') as handle:
+                pickle.dump(data_to_store_stitched, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                print("Stitched Data saved to pickle file")
 
 
-        # Create a dictionary with the variables as keys
-        data_to_store_stitched = {
-            "init_pose_latent_world": init_pose_latent_world,  
-            "init_pose_world":  self.latent2pose(init_pose_latent_world), 
-            "init_betas_world": init_betas_world,         
-            "init_trans_world": init_trans_world,        
-            "init_rot_world": init_rot_world   
-        }
-        pickle_file_path = 'stich_world_data_stitched.pickle' # save to here '/share/kuleshov/jy928/slahmr/outputs/logs/images-val/2023-11-06/Camera0-all-shot-0-1-50'
-        with open(pickle_file_path, 'wb') as handle:
-            pickle.dump(data_to_store_stitched, handle, protocol=pickle.HIGHEST_PROTOCOL)
-            print("Stitched Data saved to pickle file")
+        return rt_pairs_tensor, matching_obs_data
 
-
-
-        return rt_pairs_tensor
 
 
     def stitch_world_tracklet(self, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list, obs_data_list, device):

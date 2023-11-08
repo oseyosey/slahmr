@@ -46,12 +46,13 @@ from omegaconf import DictConfig, OmegaConf
 
 ## Multi-view Implementation ##
 from optim.base_scene_mv import BaseSceneModelMV
+from pnp.pnp_helpers import get_highest_motion_data
 
 N_STAGES = 3
 
 #TODO
 ### GAROT Implementation ###
-def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, device):
+def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, slahmr_data_init, device):
     args = cfg.data
 
     ## setting up psuedo B and T (B, the number of sequences will change.)
@@ -115,7 +116,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, device):
         B_INIT, T, body_model_multi, pose_prior, fit_gender=fit_gender, rt_pairs=rt_pairs, view_nums=cfg.data.multi_view_num, **margs
     )
     
-    base_model.initialize(obs_data_multi, cam_data) ## TODO
+    rt_pairs_tensor, matching_obs_data = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init) ## TODO
     base_model.to(device)
 
 
@@ -334,14 +335,21 @@ def main(cfg: DictConfig):
     rt_pairs = run_pnp(cfg, out_dir_muli, out_dir_muli[0], cv_data_path, device)
     print("rt_pairs", rt_pairs)
 
-    breakpoint()
+
+    ## Setting up paths for obtaining SLAHMR results ##
+    slahmr_data_init_path = f"{out_dir_muli[0]}/motion_chunks/" 
+    slahmr_data_init_dict = get_highest_motion_data(slahmr_data_init_path)
+    slahmr_data_init_dict = {k: torch.from_numpy(v) for k, v in slahmr_data_init_dict.items()}
+    slahmr_data_init_dict = move_to(slahmr_data_init_dict, device)
+
+
 
 
     ### Second-stage: Multi-view Optimization ###
     # 1. Run multi-view optimziation 
     if cfg.run_opt_mv:
         device = get_device(0)
-        run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, device)
+        run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, slahmr_data_init_dict, device)
 
     # if cfg.run_vis:
     #     run_vis(
