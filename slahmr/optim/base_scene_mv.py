@@ -112,7 +112,7 @@ class BaseSceneModelMV(nn.Module):
         )
 
         ### Multi-view Set-Up ### 
-        init_pose_list, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, pred_smpl_data_list = [], [], [], [], [], []
+        init_pose_list, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list = [], [], [], [], [], [], []
         rt_pairs_tensor = []
         for num_view in range(len(obs_data_list)):
             # initialize body params
@@ -178,6 +178,8 @@ class BaseSceneModelMV(nn.Module):
                     obs_data["joints2d"],
                     obs_data["intrins"][:, 0],
                 )
+            
+            init_appe = obs_data['init_appe'] if self.use_init and 'init_appe' in obs_data else None
 
             pred_smpl_data_list.append(pred_data)
             rt_pairs_tensor.append((R_w2c, t_w2c))
@@ -188,10 +190,15 @@ class BaseSceneModelMV(nn.Module):
             init_trans_list.append(init_trans)
             init_rot_list.append(init_rot)
 
+            init_appe_list.append(init_appe)
+
 
         self.rt_pairs_tensor = rt_pairs_tensor
-        
 
+
+        ## TODO: Use SLAHMR results for view0 to initialize the world frame SMPL parameters
+        # ## function: swap first element of init_pose_latent, init_betas_list, ... (SMPL Parameters) with optimized SLAHMR results
+        
 
         ## 先把所有需要的东西存下来，放在Jupyter Notebook里操作
         import pickle
@@ -203,7 +210,8 @@ class BaseSceneModelMV(nn.Module):
             "init_trans_list": init_trans_list,        
             "init_rot_list": init_rot_list,         
             "pred_smpl_data_list": pred_smpl_data_list,   
-            "obs_data_list": obs_data_list        
+            "obs_data_list": obs_data_list, 
+            "init_appe_list": init_appe_list       
         }
         # Path to store the pickle file
         pickle_file_path = 'stich_world_data.pickle' # save to here '/share/kuleshov/jy928/slahmr/outputs/logs/images-val/2023-11-06/Camera0-all-shot-0-1-50'
@@ -215,7 +223,8 @@ class BaseSceneModelMV(nn.Module):
         breakpoint()
         # Obtain world smpl parameters from multi-view smpl parameters through stitching. 
         init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world, matching_obs_data = self.stitch_world_tracklet(init_pose_latent_list, init_betas_list, 
-                                                                                                                                   init_trans_list, init_rot_list, pred_smpl_data_list, obs_data_list, device)
+                                                                                                                                   init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list, obs_data_list, device)
+
         self.params.set_param("latent_pose", init_pose_latent_world) ## pose in the world frame
         self.params.set_param("betas", init_betas_world) ## beta in the world frame
         self.params.set_param("trans", init_trans_world) ## root translation in the world frame
@@ -237,10 +246,11 @@ class BaseSceneModelMV(nn.Module):
             print("Stitched Data saved to pickle file")
 
 
+
         return rt_pairs_tensor
 
 
-    def stitch_world_tracklet(self, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, pred_smpl_data_list, obs_data_list, device):
+    def stitch_world_tracklet(self, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list, obs_data_list, device):
         """
         Stitch tracklets from each view (already transformed from camera to world) into one global tracklet in the world frame
 
@@ -279,8 +289,10 @@ class BaseSceneModelMV(nn.Module):
                         if t_+look_foward < self.seq_len:
                             ## Select SMPL prediction data in world frame (6890, 3)
                             selected_tracks_smpl_3d_points = pred_smpl_data_list[view]['points3d'][selected_tracks_indices][:,t_+look_foward, :, :]
-                            matched_subjects, unmatched_subjects, matched_indices_pair, unmatched_indices_world, unmatched_indices_camera  = self.match_subjects_3d_points(pred_smpl_data_list[0]['points3d'][:,t_+look_foward, :, :].cpu().detach().numpy(), 
-                                                                                                                                                                       selected_tracks_smpl_3d_points.cpu().detach().numpy()) 
+                            matched_subjects, unmatched_subjects, matched_indices_pair, unmatched_indices_world, unmatched_indices_camera  = self.match_subjects_3d_points_appe(pred_smpl_data_list[0]['points3d'][:,t_+look_foward, :, :].cpu().detach().numpy(), 
+                                                                                                                                                                       selected_tracks_smpl_3d_points.cpu().detach().numpy(),
+                                                                                                                                                                       init_appe_list[0][:,t_+look_foward, :].cpu().detach().numpy(),
+                                                                                                                                                                       init_appe_list[view][selected_tracks_indices][:,t_+look_foward, :].cpu().detach().numpy())
 
                             # Map the matched and unmatched indices back to pred_smpl_data_list[view]
                             # Replace camera_index with camera_index_global in matched_indices_pair
@@ -349,26 +361,40 @@ class BaseSceneModelMV(nn.Module):
 
 
 
-    def merge_2D_smpl_param_lists(self, pose_latent_2D_list, betas_2D_list, trans_2D_list, rot_2D_list):
+    def merge_2D_smpl_param_lists(self, pose_latent_2D_list, betas_2D_list, trans_2D_list, rot_2D_list, avg_pose = True):
         """
         Merging 2D SMPL parameters from multiple views into one global tracklet in the world frame
 
         Input:
+
         """
+        ## Hyperparameters Settings ##
+        trans_alpha = 75.0
+        betas_alpha = 50.0
+        rot_alpha = 99.0
+        pose_alpha = 50.0
+
+
         ## Merge trans_2D_list  ##
-        init_trans_world = calculate_weighted_averages_trans_2D(trans_2D_list)
+        init_trans_world = calculate_weighted_averages_trans_2D(trans_2D_list, first_element_weight_percentage=trans_alpha)
 
         ## Merge betas_2D_list ##
-        init_betas_world = calculate_weighted_averages_betas_2D(betas_2D_list)
+        init_betas_world = calculate_weighted_averages_betas_2D(betas_2D_list, first_element_weight_percentage=betas_alpha)
 
         ## Merge rot_2D_list ##
-        init_rot_world = calculate_weighted_averages_rot_2D(rot_2D_list)
+        if avg_pose:
+            ## Average Root Orientation, porential problem! Because ground plane is not established for other view! ##
+            init_rot_world = calculate_weighted_averages_rot_2D(rot_2D_list, first_element_weight_percentage=rot_alpha)
+        else:
+            ##TODO: Solution for now, let's just use SLAHMR optimized results for this.
+            ##TODO: Dimension Issue.
+            init_rot_world = rot_2D_list[0] 
 
         ## Merge pose_2D_list ##
-        init_pose_latent_world = self.calculate_weighted_averages_pose_latent_2D(pose_latent_2D_list)
+        init_pose_latent_world = self.calculate_weighted_averages_pose_latent_2D(pose_latent_2D_list, first_element_weight_percentage=pose_alpha)
+
 
         return init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world
-
 
 
 
@@ -396,7 +422,7 @@ class BaseSceneModelMV(nn.Module):
         for i in range(len(pred_smpl_data_array)):
             for j in range(len(selected_tracks_array)):
                 # TODO: Compute the cost between pred_smpl_data_array[i] and selected_tracks_array[j]
-                cost = self.compute_cost_l2(pred_smpl_data_array[i], selected_tracks_array[j])
+                cost = compute_cost_l2(pred_smpl_data_array[i], selected_tracks_array[j])
                 cost_matrix[i, j] = cost
 
         # Use the Hungarian algorithm to find the optimal assignment
@@ -412,20 +438,49 @@ class BaseSceneModelMV(nn.Module):
         unmatched_indices_camera = [j for j in range(len(selected_tracks_array)) if j not in col_indices]
 
         return matched_subjects, unmatched_subjects, matched_indices_pairs, unmatched_indices_world, unmatched_indices_camera
-    
 
-    def compute_cost_l2(self, pred_smpl_data, selected_track):
-        """
-        Input:
-        pred_smpl_data: SMPL data in the world frame
-        selected_track: SMPL data in the world frame (camera transformed)
 
-        Output:
-        Compute the L2 distance between each pair of 3D points
-        """
-        cost = np.sum(np.linalg.norm(pred_smpl_data - selected_track, axis=1))
 
-        return cost
+    def match_subjects_3d_points_appe(self, pred_smpl_data_list, selected_tracks_smpl_3d_points, init_appe_list_world, selected_appe_list_camera, weight_3d=1.0, weight_appearance=0.0):
+        # Convert to numpy arrays
+        pred_smpl_data_array = np.array(pred_smpl_data_list)
+        selected_tracks_array = np.array(selected_tracks_smpl_3d_points)
+        init_appe_array_world = np.array(init_appe_list_world)
+        selected_appe_array_camera = np.array(selected_appe_list_camera)
+
+        # Normalize the 3D SMPL coordinates
+        pred_smpl_data_array = normalize_smpl_features(pred_smpl_data_array)
+        selected_tracks_array = normalize_smpl_features(selected_tracks_array)
+
+        # Normalize the appearance embeddings
+        init_appe_array_world = normalize_appearance_embeddings(init_appe_array_world)
+        selected_appe_array_camera = normalize_appearance_embeddings(selected_appe_array_camera)
+
+        # Compute the cost matrices
+        cost_matrix_combined = np.zeros((len(pred_smpl_data_array), len(selected_tracks_array)))
+
+        for i in range(len(pred_smpl_data_array)):
+            for j in range(len(selected_tracks_array)):
+                cost_3d = compute_cost_l2(pred_smpl_data_array[i], selected_tracks_array[j])
+                cost_appe = compute_cost_appearance_euclidean(init_appe_array_world[i], selected_appe_array_camera[j])
+                
+                # Combine the costs using the provided weights
+                combined_cost = weight_3d * cost_3d + weight_appearance * cost_appe
+                cost_matrix_combined[i, j] = combined_cost
+
+        # Hungarian algorithm for optimal assignment
+        row_indices, col_indices = linear_sum_assignment(cost_matrix_combined)
+
+        # Extract matches and unmatched items, same as before
+        matched_subjects = [(pred_smpl_data_array[i], selected_tracks_array[j]) for i, j in zip(row_indices, col_indices)]
+        unmatched_subjects = [pred_smpl_data_array[i] for i in range(len(pred_smpl_data_array)) if i not in row_indices]
+
+        matched_indices_pairs = list(zip(row_indices, col_indices))
+        unmatched_indices_world = [i for i in range(len(pred_smpl_data_array)) if i not in row_indices]
+        unmatched_indices_camera = [j for j in range(len(selected_tracks_array)) if j not in col_indices]
+
+        return matched_subjects, unmatched_subjects, matched_indices_pairs, unmatched_indices_world, unmatched_indices_camera
+
 
 
     def initialize_2D_smpl_param_lists(self, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, view_init=0):
@@ -490,28 +545,28 @@ class BaseSceneModelMV(nn.Module):
                 return t_+1
                 
     
-    def calculate_weighted_averages_pose_latent_2D(self, pose_latent_2D_list):
+    def calculate_weighted_averages_pose_latent_2D(self, pose_latent_2D_list, first_element_weight_percentage=50.0):
         """
         Averages the pose latents in a 2D list with weighted averaging on the corresponding pose representation.
-        Each latent tensor is first converted to pose, then weighted averaging is performed, and the result is converted back to latent representation.
-        
+        The first latent tensor in each sublist is given a preferential weight based on the specified percentage,
+        emphasizing its impact on the weighted average.
+
         Parameters:
         pose_latent_2D_list (list of list of torch.Tensor): A list where each element is a sublist containing tensors of pose latent representation.
+        first_element_weight_percentage (float): The percentage of the total weight to be assigned to the first element of each sublist.
 
         Returns:
         torch.Tensor: A tensor containing the weighted averages of the pose latents for each sublist.
         """
-        weights_list = []
-
-        # Create weights, giving the first element a weight of 2 and the rest a weight of 1
-        for latent_list in pose_latent_2D_list:
-            weights = [2] + [1] * (len(latent_list) - 1)
-            weights_list.append(weights)
-
         weighted_averages_latent = []
 
         # Process each sublist
-        for latent_list, weights in zip(pose_latent_2D_list, weights_list):
+        for latent_list in pose_latent_2D_list:
+            # Calculate the total weight and the weight of the first element
+            total_elements_weight = len(latent_list) - 1  # Total weight of elements except the first
+            first_element_weight = total_elements_weight * (first_element_weight_percentage / (100 - first_element_weight_percentage))
+            weights = [first_element_weight] + [1] * (len(latent_list) - 1)
+
             poses = []
             # Convert each latent tensor to a pose tensor
             for latent in latent_list:

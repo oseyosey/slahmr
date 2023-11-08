@@ -29,7 +29,7 @@ def launch_phalp(gpus, seq, img_dir, res_dir, overwrite=False):
         f"overwrite={overwrite}",
         "detect_shots=True",
         "video.extract_video=False",
-        "render.enable=False",
+        "render.enable=True", ## GAROT Implementation 
     ]
 
     cmd = " ".join(cmd_args)
@@ -64,7 +64,7 @@ def launch_crossview(gpus, seq, img_dir_source, res_dir, res_dir_cross_view, ove
         f"overwrite={overwrite}",
         "detect_shots=True",
         "video.extract_video=False",
-        "render.enable=False",
+        "render.enable=True", ## enable PHALP
         "GAROT.multi_view=True",
     ]
 

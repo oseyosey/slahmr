@@ -109,10 +109,6 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, device):
 
     margs = cfg.model
 
-
-    ##TODO Move rt_pairs to device
-    # rt_pairs = move_to(rt_pairs.to_dict()), device)
-
     ## All poses are in their own INDEPENDENT camera reference frames.
     ## But if images are static, then poses should be in the same camera refernce frames. 
     base_model = BaseSceneModelMV(
@@ -121,8 +117,6 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, device):
     
     base_model.initialize(obs_data_multi, cam_data) ## TODO
     base_model.to(device)
-
-
 
 
     return 
@@ -282,7 +276,6 @@ def main(cfg: DictConfig):
         out_dir_new = out_dir.replace(last_segment, cfg_multi[num_view].data.name)
         out_dir_muli.append(out_dir_new)
 
-
     ## Run PHALP for each view ## 
     dataset_multi = []
     for num_view in range(cfg.data.multi_view_num):     
@@ -322,6 +315,7 @@ def main(cfg: DictConfig):
                 "init_body_pose": [],
                 "init_root_orient": [],
                 "init_trans": [],
+                "init_appe": [] 
             }
         """
 

@@ -103,6 +103,9 @@ def unpack_frame(track_data):
         smpl = track_data["smpl"][i]
         betas = smpl["betas"].squeeze()  # (10,)
         body_pose = smpl["body_pose"].squeeze()  # (23, 3, 3)
+        ## GAROT
+        # track_data["appe"], list of appearance feature.
+        appe = track_data["appe"][i].squeeze()  # (4096, )
         body_pose_aa = np.stack(
             [cv2.Rodrigues(x)[0].squeeze() for x in body_pose], axis=0
         )  # (23, 3)
@@ -114,6 +117,7 @@ def unpack_frame(track_data):
             "body_pose": body_pose_aa.tolist(),
             "global_orient": global_orient_aa.tolist(),
             "cam_trans": cam_trans.tolist(),
+            "appe": appe.tolist(),
         }
 
     return out_dict

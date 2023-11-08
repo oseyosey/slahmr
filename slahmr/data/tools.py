@@ -55,8 +55,9 @@ def read_smpl_preds(pred_path, num_betas=10):
     rot = np.zeros(3)
     trans = np.zeros(3)
     betas = np.zeros(num_betas)
+    appe = np.zeros(4096)
     if not os.path.isfile(pred_path):
-        return pose, rot, trans, betas
+        return pose, rot, trans, betas, appe
 
     with open(pred_path, "r") as f:
         data = json.load(f)
@@ -73,7 +74,10 @@ def read_smpl_preds(pred_path, num_betas=10):
     if "betas" in data:
         betas = np.array(data["betas"], dtype=np.float32)
 
-    return pose, rot, trans, betas
+    if "appe" in data:
+        appe = np.array(data["appe"], dtype=np.float32)
+
+    return pose, rot, trans, betas, appe
 
 
 def load_smpl_preds(pred_paths, interp=True, num_betas=10):
@@ -82,17 +86,20 @@ def load_smpl_preds(pred_paths, interp=True, num_betas=10):
 
     # load single image smpl predictions
     stack_fnc = functools.partial(np.stack, axis=0)
-    # (N, 23, 3), (N, 3), (N, 3), (N, 10)
-    pose, orient, trans, betas = map(
+    # (N, 23, 3), (N, 3), (N, 3), (N, 10), (N, 4096)
+    pose, orient, trans, betas, appe = map(
         stack_fnc, zip(*[read_smpl_preds(p, num_betas=num_betas) for p in pred_paths])
     )
     if not interp:
-        return pose, orient, trans, betas
+        return pose, orient, trans, betas, appe
 
     # interpolate the occluded tracks
     orient_slerp = Slerp(vis_idcs, Rotation.from_rotvec(orient[vis_idcs]))
     trans_interp = interp1d(vis_idcs, trans[vis_idcs], axis=0)
     betas_interp = interp1d(vis_idcs, betas[vis_idcs], axis=0)
+    
+    ## GAROT Implementation
+    appe_interp = interp1d(vis_idcs, appe[vis_idcs], axis=0)
 
     tmin, tmax = min(vis_idcs), max(vis_idcs) + 1
     times = np.arange(tmin, tmax)
@@ -100,9 +107,11 @@ def load_smpl_preds(pred_paths, interp=True, num_betas=10):
     trans[times] = trans_interp(times)
     betas[times] = betas_interp(times)
 
+    appe[times] = appe_interp(times)
+
     # interpolate for each joint angle
     for i in range(pose.shape[1]):
         pose_slerp = Slerp(vis_idcs, Rotation.from_rotvec(pose[vis_idcs, i]))
         pose[times, i] = pose_slerp(times).as_rotvec()
 
-    return pose, orient, trans, betas
+    return pose, orient, trans, betas, appe
