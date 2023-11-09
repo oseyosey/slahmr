@@ -21,7 +21,7 @@ from util.logger import Logger
 CONTACT_HEIGHT_THRESH = 0.08
 
 
-class StageLoss(nn.Module):
+class StageLossMV(nn.Module):
     def __init__(self, loss_weights, **kwargs):
         super().__init__()
         self.cur_optim_step = 0
@@ -37,7 +37,7 @@ class StageLoss(nn.Module):
         Logger.log(self.loss_weights)
 
 
-class RootLoss(StageLoss):
+class RootLossMV(StageLossMV):
     def setup_losses(
         self,
         loss_weights,
@@ -50,7 +50,7 @@ class RootLoss(StageLoss):
         self.joints2d_loss = Joints2DLoss(ignore_op_joints, joints2d_sigma)
         self.points3d_loss = Points3DLoss(use_chamfer, robust_loss, robust_tuning_const)
 
-    def forward(self, observed_data, pred_data, valid_mask=None):
+    def forward(self, observed_data_list, pred_data, matching_obs_data, rt_pairs_tensor, num_views, valid_mask_multi=None):
         """
         For fitting just global root trans/orientation.
         Only computes joint/point/vert losses, i.e. no priors.
@@ -58,67 +58,85 @@ class RootLoss(StageLoss):
         stats_dict = dict()
         loss = 0.0
 
+        observed_data_init = observed_data_list[0]
 
-        ## joints3D, verts3D, and points3D are not used for now, their loss weights are 0. ##
-        # Joints in 3D space
-        if (
-            "joints3d" in observed_data
-            and "joints3d" in pred_data
-            and self.loss_weights["joints3d"] > 0.0
-        ):
-            cur_loss = joints3d_loss(
-                observed_data["joints3d"], pred_data["joints3d"], valid_mask
-            )
-            loss += self.loss_weights["joints3d"] * cur_loss
-            stats_dict["joints3d"] = cur_loss
-
-        # Select vertices in 3D space
-        if (
-            "verts3d" in observed_data
-            and "verts3d" in pred_data
-            and self.loss_weights["verts3d"] > 0.0
-        ):
-            cur_loss = verts3d_loss(
-                observed_data["verts3d"], pred_data["verts3d"], valid_mask
-            )
-            loss += self.loss_weights["verts3d"] * cur_loss
-            stats_dict["verts3d"] = cur_loss
-
-        # All vertices to non-corresponding observed points in 3D space
-        if (
-            "points3d" in observed_data
-            and "points3d" in pred_data
-            and self.loss_weights["points3d"] > 0.0
-        ):
-            cur_loss = self.points3d_loss(
-                observed_data["points3d"], pred_data["points3d"]
-            )
-            loss += self.loss_weights["points3d"] * cur_loss
-            stats_dict["points3d"] = cur_loss
-
-
-        ##TODO 
+        ##TODO We will be feeding into observed_data_multi, lists of observed_data for each view. ##
         # 2D re-projection loss
         if (
-            "joints2d" in observed_data
+            "joints2d" in observed_data_init
             and "joints3d_op" in pred_data
             and "cameras" in pred_data
             and self.loss_weights["joints2d"] > 0.0
         ):
-            joints2d = cam_util.reproject(
-                pred_data["joints3d_op"], *pred_data["cameras"]
-            )
-            cur_loss = self.joints2d_loss(
-                observed_data["joints2d"], joints2d, valid_mask
-            )
-            loss += self.loss_weights["joints2d"] * cur_loss
-            stats_dict["joints2d"] = cur_loss
+            cur_loss_mv = 0.0
+            for num_view in range(num_views):
+                if num_view == 0:
+                    observed_data = observed_data_list[0]
+
+                    cam_R, cam_t, cam_f, cam_center = pred_data["cameras"]
+
+                    ## select the pred_data (to match with our observed_data) ##
+                    match_index = [index for index in range(len(observed_data['joints2d']))]
+                    joints2d = cam_util.reproject(
+                        pred_data["joints3d_op"], *pred_data["cameras"] ##TODO: adapt to multi-view
+                        )
+                    joints2d_select = joints2d[match_index]
+                    if valid_mask_multi is not None:
+                        cur_loss = self.joints2d_loss(
+                            observed_data["joints2d"], joints2d_select, valid_mask_multi[num_view]
+                        )
+                    else:
+                        cur_loss = self.joints2d_loss(
+                            observed_data["joints2d"], joints2d_select
+                        )
+                else:
+                    observed_data = observed_data_list[num_view]
+                    matching_obs_data_per_view = matching_obs_data[num_view]
+
+                    cam_R, cam_t = rt_pairs_tensor[num_view] ## We may need to check the dimension ([49, 3, 3]), we want ([3, 49, 3, 3]). 
+                    cam_R = cam_R.repeat(3, 1, 1, 1)
+                    cam_t = cam_t.repeat(3, 1, 1)
+
+                    _, _, cam_f, cam_center = pred_data["cameras"]
+                    joints2d = cam_util.reproject(
+                        pred_data["joints3d_op"], 
+                        cam_R, cam_t, 
+                        cam_f, cam_center
+                        )
+                    ##TODO: select the pred_data (to match with our observed_data) ##
+                    joints2d_select = torch.empty_like(joints2d)
+
+                    for world_index, camera_data in matching_obs_data_per_view.items():
+                        camera_index, first_appe_t, last_appe_t = camera_data
+                        joints2d_select[camera_index, first_appe_t:last_appe_t+1] = joints2d[world_index, first_appe_t:last_appe_t+1]
+
+                    if valid_mask_multi is not None:
+                        cur_loss = self.joints2d_loss(
+                            observed_data["joints2d"], joints2d_select, valid_mask_multi[num_view]
+                        )
+                    else:
+                        cur_loss = self.joints2d_loss(
+                            observed_data["joints2d"], joints2d_select
+                        )
+
+                cur_loss_mv += cur_loss
+            loss += self.loss_weights["joints2d"] * cur_loss_mv
+            stats_dict["joints2d"] = cur_loss_mv
+
 
         # smooth 3d joint motion
         if self.loss_weights["joints3d_smooth"] > 0.0:
-            cur_loss = joints3d_smooth_loss(pred_data["joints3d"], valid_mask)
-            loss += self.loss_weights["joints3d_smooth"] * cur_loss
-            stats_dict["joints3d_smooth"] = cur_loss
+            ## TODO Mutli-view
+            cur_loss_mv = 0.0
+            for num_view in range(num_views):
+                if valid_mask_multi is not None:
+                    valid_mask = valid_mask_multi[num_view]
+                else:
+                    valid_mask = None
+                cur_loss = joints3d_smooth_loss(pred_data["joints3d"], valid_mask) #TODO
+                cur_loss_mv += cur_loss
+            loss += self.loss_weights["joints3d_smooth"] * cur_loss_mv
+            stats_dict["joints3d_smooth"] = cur_loss_mv
 
         # If we're optimizing cameras, camera reprojection loss
         if "bg2d_err" in pred_data and self.loss_weights["bg2d"] > 0.0:
@@ -126,18 +144,6 @@ class RootLoss(StageLoss):
             loss += self.loss_weights["bg2d"] * cur_loss
             stats_dict["bg2d_err"] = cur_loss
 
-        # camera smoothness
-        if "cam_R" in pred_data and self.loss_weights["cam_R_smooth"] > 0.0:
-            cam_R = pred_data["cam_R"]  # (T, 3, 3)
-            cur_loss = rotation_smoothness_loss(cam_R[1:], cam_R[:-1])
-            loss += self.loss_weights["cam_R_smooth"] * cur_loss
-            stats_dict["cam_R_smooth"] = cur_loss
-
-        if "cam_t" in pred_data and self.loss_weights["cam_t_smooth"] > 0.0:
-            cam_t = pred_data["cam_t"]  # (T, 3, 3)
-            cur_loss = translation_smoothness_loss(cam_t[1:], cam_t[:-1])
-            loss += self.loss_weights["cam_t_smooth"] * cur_loss
-            stats_dict["cam_t_smooth"] = cur_loss
 
         return loss, stats_dict
 
@@ -168,7 +174,7 @@ SMPLLoss setup is same as RootLoss
 """
 
 
-class SMPLLoss(RootLoss):
+class SMPLLossMV(RootLossMV):
     def forward(self, observed_data, pred_data, nsteps, valid_mask=None):
         """
         For fitting full shape and pose of SMPL.
@@ -198,7 +204,7 @@ MotionLoss also includes SMPLLoss
 """
 
 
-class MotionLoss(SMPLLoss):
+class MotionLossMV(SMPLLossMV):
     def setup_losses(
         self,
         loss_weights,

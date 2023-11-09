@@ -44,7 +44,7 @@ def average_rotations(rot_vec_list, first_element_weight_percentage):
     
     return rot_vec_avg
 
-def calculate_weighted_averages_rot_2D(rot_2D_list, first_element_weight_percentage=50.0):
+def calculate_weighted_averages_rot_2D(rot_2D_list, first_element_weight_percentage=70.0):
     """
     Applies average_rotations to each sublist of rotation vectors in a larger list, with a specified weight 
     for the first element in each sublist based on the given percentage of the total weight.

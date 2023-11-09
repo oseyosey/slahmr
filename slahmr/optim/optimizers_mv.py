@@ -14,7 +14,7 @@ from util.logger import Logger, log_cur_stats
 from util.tensor import move_to, detach_all
 from vis.output import prep_result_vis, animate_scene
 
-from .losses import RootLoss, SMPLLoss, MotionLoss
+from .losses_mv import RootLossMV, SMPLLossMV, MotionLossMV
 from .output import save_camera_json
 
 
@@ -29,19 +29,21 @@ Stage 3: fit poses and roots in same global coordinate frame
 """
 
 
-class StageOptimizer(object):
+class StageOptimizerMV(object):
     def __init__(
         self,
         name,
         model,
         param_names,
+        num_views,
+        rt_pairs_tensor,
         lr=1.0,
         lbfgs_max_iter=20,
         save_every=10,
-        vis_every=-1, ## we probably want to change this for debug 
+        vis_every=-1,
         save_meshes=True,
         max_chunk_steps=10,
-        **kwargs, ## TODO: Need to understand this more
+        **kwargs,
     ):
         Logger.log(f"INITIALIZING OPTIMIZER {name} for {param_names}")
         self.name = name
@@ -69,6 +71,10 @@ class StageOptimizer(object):
         self.last_updated = 0
         self.reached_max = False
         self.reached_max_iter = -1
+
+        ## Garot
+        self.num_views = num_views
+        self.rt_pairs_tensor = rt_pairs_tensor
 
     def set_opt_vars(self, param_names):
         Logger.log("Set param names:")
@@ -161,7 +167,7 @@ class StageOptimizer(object):
             Logger.log(f"saving {len(mesh_seqs)} meshes to {scene_dir}")
             save_mesh_scenes(scene_dir, mesh_seqs)
 
-    def vis_result(self, res_dir, obs_data, vis=None, num_steps=-1):
+    def vis_result(self, res_dir, obs_data, num_view, vis=None, num_steps=-1):
         if vis is None or self.vis_every < 0:
             return
 
@@ -173,6 +179,15 @@ class StageOptimizer(object):
             ##Important: Collect predicted outputs (latent_pose, trans, root_orient, betas, body pose) into dict
 
         res_dict = detach_all(pred_dict["world"])
+
+        ##TODO (res["cam_R"][0], res["cam_t"][0]))
+        ##TODO We want to detect which view a and change res["cam_R"][0], res["cam_t"][0] to the corresponding view RT.
+        cam_R, cam_t = self.rt_pairs_tensor[num_view]
+        cam_R_stacked = cam_R.repeat(3, 1, 1, 1)
+        cam_t_stacked = cam_t.repeat(3, 1, 1)
+        res_dict['cam_R'] = cam_R_stacked
+        res_dict['cam_t'] = cam_t_stacked
+
         scene_dict = move_to(
             prep_result_vis(
                 res_dict,
@@ -223,17 +238,24 @@ class StageOptimizer(object):
             plt.boxplot(loss_vals, labels=times, showfliers=False)
             plt.savefig(f"{res_dir}/{loss_name}.png")
 
-    def run(self, obs_data, num_iters, out_dir, vis=None, writer=None):
+    ## GAROT Implementation ##
+    def run(self, obs_data_multi, num_iters, out_dir_multi, vis_multi=None, writer=None):
         self.cur_step = 0
         self.loss.cur_step = 0
-        res_dir = os.path.join(out_dir, self.name)
-        os.makedirs(res_dir, exist_ok=True)
-        seq_name = obs_data["seq_name"][0]
+
+        breakpoint()
+
+        out_dir_init = out_dir_multi[0]
+        res_dir_init = os.path.join(out_dir_init, self.name) ## Point to the directory 
+        os.makedirs(res_dir_init, exist_ok=True)
+
+        obs_data_init = obs_data_multi[0]
+        seq_name = "MultiCamera" #obs_data_init["seq_name"][0]
         print("SEQ NAME", seq_name)
 
         # try to load from checkpoint if exists
-        device = obs_data["joints2d"].device
-        self.load_checkpoint(out_dir, device=device)
+        device = obs_data_init["joints2d"].device
+        self.load_checkpoint(out_dir_init, device=device)
 
         if self.cur_step >= num_iters:
             Logger.log(f"Checkpoint at {self.cur_step} >= {num_iters}, skipping")
@@ -242,29 +264,32 @@ class StageOptimizer(object):
         Logger.log(f"OPTIMIZING {self.name} FOR {num_iters} ITERATIONS")
 
         # save initial results and vis
-        self.save_results(res_dir, seq_name)
+        self.save_results(res_dir_init, seq_name)
 
         for i in range(self.cur_step, num_iters):
             Logger.log("ITER: %d" % (i))
 
             if (i + 1) % self.save_every == 0:  # save before
-                self.save_checkpoint(out_dir)
-                self.save_results(res_dir, seq_name)
+                self.save_checkpoint(out_dir_init)
+                self.save_results(res_dir_init, seq_name)
             else:
-                self.save_checkpoint(out_dir)
+                self.save_checkpoint(out_dir_init)
 
             if (i + 1) % self.vis_every == 0:  # render
-                self.vis_result(res_dir, obs_data, vis)
+                # visualize for every view
+                for num_view in range(self.num_views):
+                    self.vis_result(res_dir_init, obs_data_multi[num_view], num_view, vis=vis_multi[num_view])
 
             self.cur_step = i
             self.loss.cur_step = i
 
-            self.optim_step(obs_data, writer)
+            ## Multi-view optimization
+            self.optim_step(obs_data_multi, writer)
 
             # early termination in case of nans
             if np.isnan(self.cur_loss):
                 # we need to backtrack
-                self.load_checkpoint(out_dir, device=device)
+                self.load_checkpoint(out_dir_init, device=device)
                 return
 
             # termination for the last chunk
@@ -287,15 +312,17 @@ class StageOptimizer(object):
             self.prev_loss = self.cur_loss
 
         # final save and vis step
+        ## TODO: make this multi_view
         self.cur_step = num_iters
-        self.save_checkpoint(out_dir)
-        self.save_results(res_dir, seq_name)
-        self.vis_result(res_dir, obs_data, vis)
+        self.save_checkpoint(out_dir_init)
+        self.save_results(res_dir_init, seq_name)
+        for num_view in range(self.num_views):
+            self.vis_result(res_dir_init, obs_data_multi[num_view], num_view, vis=vis_multi[num_view])
 
-    def optim_step(self, obs_data, writer=None):
+    def optim_step(self, obs_data_multi, writer=None):
         def closure():
             self.optim.zero_grad()
-            loss, stats_dict, preds = self.forward_pass(obs_data)
+            loss, stats_dict, preds = self.forward_pass(obs_data_multi) ## Here it's calling the def forward_pass() function in RootOptimizerMV / SMPLOptimizer / MotionOptimizer
             stats_dict["total"] = loss
             self.log_losses(move_to(detach_all(stats_dict), "cpu"))
             self.cur_loss = stats_dict["total"].detach().cpu().item()
@@ -313,14 +340,17 @@ class StageOptimizer(object):
             self.record_current_losses(writer)
 
 
-class RootOptimizer(StageOptimizer):
-    name = "root_fit"
+class RootOptimizerMV(StageOptimizerMV):
+    name = "root_fit_multi_view"
     stage = 0
 
     def __init__(
         self,
         model,
         all_loss_weights,
+        matching_obs_data,
+        rt_pairs_tensor,
+        num_views,
         use_chamfer=False,
         robust_loss_type="none",
         robust_tuning_const=4.6851,
@@ -329,20 +359,25 @@ class RootOptimizer(StageOptimizer):
     ):
         ## optimize global orientation and root translation in the world frame
         param_names = ["trans", "root_orient"]
-        super().__init__(self.name, model, param_names, **kwargs)
+        super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, **kwargs)
 
         ## TODO Here they defined the root loss (what we need to change for multi-view!)
         ## TODO know if robust_loss_type = None (meaning they didn't use the points3D_loss)
-        self.loss = RootLoss(
+        self.loss = RootLossMV(
             all_loss_weights[self.stage],
             ignore_op_joints=OP_IGNORE_JOINTS,
             joints2d_sigma=joints2d_sigma,
             use_chamfer=use_chamfer,
             robust_loss=robust_loss_type,
             robust_tuning_const=robust_tuning_const,
-        )
+        )  # Here it's calling the def setup_losses() function
 
-    def forward_pass(self, obs_data):
+
+        ## Matching obs data is a ditcionary of dictionary that stores the matching between pred data and obs data. 
+        self.matching_obs_data = matching_obs_data
+        #self.rt_pairs_tensor = rt_pairs_tensor # Lists of R,T tuples ( (T, 3, 3), (T, 3) )
+
+    def forward_pass(self, obs_data_multi):
         """
         Takes in observed data, predicts the smpl parameters and returns loss
         """
@@ -351,12 +386,18 @@ class RootOptimizer(StageOptimizer):
         pred_data["cameras"] = self.model.params.get_cameras()
 
         # compute data losses only
-        vis_mask = obs_data["vis_mask"] >= 0
-        loss, stats_dict = self.loss(obs_data, pred_data, vis_mask)
+        vis_mask_multi = []
+        for num_view in range(self.num_views):
+            vis_mask = obs_data_multi[num_view]["vis_mask"] >= 0
+            vis_mask_multi.append(vis_mask)
+        if not vis_mask_multi:
+            vis_mask_multi = None
+
+        loss, stats_dict = self.loss(obs_data_multi, pred_data, self.matching_obs_data, self.rt_pairs_tensor, self.num_views, valid_mask_multi=vis_mask_multi)
         return loss, stats_dict, pred_data
 
 
-class SMPLOptimizer(StageOptimizer):
+class SMPLOptimizerMV(StageOptimizerMV):
     name = "smpl_fit"
     stage = 0
 
@@ -400,7 +441,7 @@ class SMPLOptimizer(StageOptimizer):
         return loss, stats_dict, pred_data
 
 
-class SmoothOptimizer(StageOptimizer):
+class SmoothOptimizerMV(StageOptimizerMV):
     name = "smooth_fit"
     stage = 1
 
@@ -453,7 +494,7 @@ class SmoothOptimizer(StageOptimizer):
         return loss, stats_dict, pred_data
 
 
-class MotionOptimizer(StageOptimizer):
+class MotionOptimizerMV(StageOptimizerMV):
     name = "motion_fit"
     stage = 2
 
@@ -548,7 +589,7 @@ def slice_dict(d, start, end):
     return out
 
 
-class MotionOptimizerChunks(MotionOptimizer):
+class MotionOptimizerChunksMV(MotionOptimizerMV):
     """
     Incrementally optimize sequence in chunks (with all variables)
     :param chunk_size (int) number of frames per chunk
@@ -597,7 +638,7 @@ class MotionOptimizerChunks(MotionOptimizer):
         return super().vis_result(res_dir, obs_data, vis=vis, num_steps=self.end_idx)
 
 
-class MotionOptimizerFreeze(MotionOptimizer):
+class MotionOptimizerFreeze(MotionOptimizerMV):
     """
     Only optimizing a subset of parameters
     """

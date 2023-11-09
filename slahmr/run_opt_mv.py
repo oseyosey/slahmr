@@ -13,6 +13,17 @@ from pnp.launch_pnp import *
 from humor.humor_model import HumorModel
 from optim.base_scene import BaseSceneModel
 from optim.moving_scene import MovingSceneModel
+
+## GAROT Implementation ##
+## TODO: We might want to change the naming to avoid conflict##
+from optim.optimizers_mv import (
+    RootOptimizerMV,
+    SmoothOptimizerMV,
+    SMPLOptimizerMV,
+    MotionOptimizerMV,
+    MotionOptimizerChunksMV,
+)
+
 from optim.optimizers import (
     RootOptimizer,
     SmoothOptimizer,
@@ -20,6 +31,8 @@ from optim.optimizers import (
     MotionOptimizer,
     MotionOptimizerChunks,
 )
+
+
 from optim.output import (
     save_track_info,
     save_camera_json,
@@ -52,7 +65,7 @@ N_STAGES = 3
 
 #TODO
 ### GAROT Implementation ###
-def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, slahmr_data_init, device):
+def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cfg_multi, device):
     args = cfg.data
 
     ## setting up psuedo B and T (B, the number of sequences will change.)
@@ -116,8 +129,46 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, slahmr_data_init, device):
         B_INIT, T, body_model_multi, pose_prior, fit_gender=fit_gender, rt_pairs=rt_pairs, view_nums=cfg.data.multi_view_num, **margs
     )
     
-    rt_pairs_tensor, matching_obs_data = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init) ## TODO
+    ## Initialize base_model with SLAHMR+4D Human results | Multi-view ##
+    rt_pairs_tensor, matching_obs_data = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init) 
     base_model.to(device)
+
+    # save initial results for later visualization
+    ## TODO: save initial results under under each view
+    ## 这里我们重复的存储了initial prediction的信息到了每个view的output的folder下面，可能会有更好的解决方案
+    for view_num, out_dir in enumerate(out_dir_multi):
+        args_per_view = cfg_multi[view_num].data
+        save_input_poses(dataset, os.path.join(out_dir, "phalp"), args_per_view.seq)
+        save_initial_predictions(base_model, os.path.join(out_dir, "init"), args_per_view.seq) # args_per_view.seq is called the name of the sequence e.g. Camera0
+
+
+    opts = cfg.optim.options
+    opts["vis_every"] = 10
+    vis_scale = 0.25
+    vis_multi = [] # vis_multi is a list of vis for each view
+    for view_num in range(cfg.data.multi_view_num):
+        if opts.vis_every > 0:
+            vis = init_viewer(
+                dataset_multi[view_num].img_size,
+                cam_data["intrins"][0],
+                vis_scale=vis_scale,
+                bg_paths=dataset_multi[view_num].sel_img_paths,
+                fps=cfg.fps,
+            )
+            vis_multi.append(vis)
+        else:
+            vis_multi = None
+    print("OPTIMIZER OPTIONS:", opts)
+
+    writer = SummaryWriter(out_dir_multi[0])
+
+
+    print("RUNNING MULTI-VIEW OPTIMIZATION Stage 1...")
+    ##TODO: Set up RootOptimizerMV! 
+    breakpoint()
+    num_iters_root_mv = 30*10 ## Chunk size * ITER
+    optim = RootOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
+    optim.run(obs_data_multi, num_iters_root_mv , out_dir_multi, vis_multi=vis_multi, writer=writer)
 
 
     return 
@@ -344,12 +395,11 @@ def main(cfg: DictConfig):
 
 
 
-
     ### Second-stage: Multi-view Optimization ###
     # 1. Run multi-view optimziation 
     if cfg.run_opt_mv:
         device = get_device(0)
-        run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir, slahmr_data_init_dict, device)
+        run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_muli, slahmr_data_init_dict, cfg_multi, device)
 
     # if cfg.run_vis:
     #     run_vis(

@@ -213,7 +213,7 @@ class BaseSceneModelMV(nn.Module):
 
             init_appe_list.append(init_appe)
 
-
+        # Set-up rt_pairs_tensor in our BaseSceneModelMV
         self.rt_pairs_tensor = rt_pairs_tensor
         
         if debug:
@@ -372,6 +372,9 @@ class BaseSceneModelMV(nn.Module):
             # transform (combining / averaging of information) the 2D list to updated SMPL paramters in the world frame (using weighted average, possibly confidence score)
             # (Update the world tracklet pose parameteres with the corresponding latent pose, betas, root translation, and root orientation)
             init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world = self.merge_2D_smpl_param_lists(pose_latent_2D_list, betas_2D_list, trans_2D_list, rot_2D_list)
+
+            # Update the pairing information into Base Scene Model
+            self.update_pairing_info(pairing_info_all_views)
 
             return init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world, pairing_info_all_views
 
