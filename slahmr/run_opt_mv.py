@@ -59,6 +59,7 @@ from omegaconf import DictConfig, OmegaConf
 
 ## Multi-view Implementation ##
 from optim.base_scene_mv import BaseSceneModelMV
+from optim.moving_scene_mv import MovingSceneModelMV
 from pnp.pnp_helpers import get_highest_motion_data
 
 N_STAGES = 3
@@ -130,7 +131,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     )
     
     ## Initialize base_model with SLAHMR+4D Human results | Multi-view ##
-    rt_pairs_tensor, matching_obs_data = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init) 
+    rt_pairs_tensor, matching_obs_data, B_stitch = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init) 
     base_model.to(device)
 
     # save initial results for later visualization
@@ -163,25 +164,64 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     writer = SummaryWriter(out_dir_multi[0])
 
 
+    breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 1...")
     ##Set up RootOptimizerMV!  ##
     num_iters_root_mv = 30*5 ## Chunk size * ITER
     optim = RootOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
     optim.run(obs_data_multi, num_iters_root_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
+
     breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 2...")
     optim = SMPLOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
     optim.run(obs_data_multi, num_iters_root_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
-    breakpoint()
     args = cfg.optim.smooth
     optim = SmoothOptimizerMV(
         base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, opt_scale=args.opt_scale, **opts
     )
     optim.run(obs_data_multi, args.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer) # We might want to change the number of iterations here
 
+
+    breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 3...")
+    # now optimize motion model
+    Logger.log(f"Loading motion prior from {paths.humor}")
+    motion_prior = HumorModel(**cfg.humor)
+    load_state(paths.humor, motion_prior, map_location="cpu")
+    motion_prior.to(device)
+    motion_prior.eval()
+
+    Logger.log(f"Loading GMM motion prior from {paths.init_motion_prior}")
+    init_motion_prior = load_gmm(paths.init_motion_prior, device=device)
+
+
+    model = MovingSceneModelMV(
+        B_stitch,     ## Here B should be the stitched number of sequences
+        T,
+        body_model_multi,
+        pose_prior,
+        motion_prior,
+        init_motion_prior,
+        fit_gender=fit_gender,
+        rt_pairs=rt_pairs,
+        rt_pairs_tensor=rt_pairs_tensor,
+        view_nums=cfg.data.multi_view_num,
+        pairing_info=matching_obs_data,
+        **margs,
+    ).to(device)
+
+    # initialize motion model with base model predictions
+    base_params = base_model.params.get_dict() #TODO: figure out what base_params are
+    model.initialize(obs_data_multi, cam_data, base_params, cfg.fps) ##GAROT Implementation
+    model.to(device)
+
+
+    if "motion_chunks" in cfg.optim:
+        args = cfg.optim.motion_chunks
+        optim = MotionOptimizerChunksMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
+        optim.run(obs_data_multi, optim.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
 
     return 

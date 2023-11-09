@@ -54,6 +54,7 @@ class BaseSceneModelMV(nn.Module):
         rt_pairs=None, # list of (R, t) pairs for each view in numpy
         rt_pairs_tensor=None, # transformed version of rt_pairs in tensor format
         view_nums=0, # number of views
+        pairing_info =None,
         **kwargs,
     ):
         super().__init__()
@@ -91,8 +92,8 @@ class BaseSceneModelMV(nn.Module):
         self.rt_pairs = rt_pairs
         self.view_nums = view_nums
 
-        self.rt_pairs_tensor = None
-        self.pairing_info = None
+        self.rt_pairs_tensor = rt_pairs_tensor
+        self.pairing_info = pairing_info
 
     def initialize(self, obs_data_list, cam_data, slahmr_data_init, debug=False):
         """
@@ -261,8 +262,10 @@ class BaseSceneModelMV(nn.Module):
                 pickle.dump(data_to_store_stitched, handle, protocol=pickle.HIGHEST_PROTOCOL)
                 print("Stitched Data saved to pickle file")
 
+        ## Obtain new batch size (number of sequences) to optimie 
+        b_stitched = init_pose_latent_world.shape[0] # number of sequences to optimize
 
-        return rt_pairs_tensor, matching_obs_data
+        return rt_pairs_tensor, matching_obs_data, b_stitched 
 
 
 

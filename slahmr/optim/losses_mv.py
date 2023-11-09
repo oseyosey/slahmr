@@ -181,7 +181,7 @@ class SMPLLossMV(RootLossMV):
         nsteps used to scale single-step losses
         """
         loss, stats_dict = super().forward(
-            observed_data_list, pred_data, matching_obs_data, rt_pairs_tensor, num_views, valid_mask_multi=None
+            observed_data_list, pred_data, matching_obs_data, rt_pairs_tensor, num_views, valid_mask_multi
         )
 
         # prior to keep latent pose likely
@@ -225,11 +225,14 @@ class MotionLossMV(SMPLLossMV):
 
     def forward(
         self,
-        observed_data,
+        observed_data_list,
         pred_data,
         cam_pred_data,
         nsteps,
-        valid_mask=None,
+        matching_obs_data,
+        rt_pairs_tensor,
+        num_views,
+        valid_mask_multi=None,
         init_motion_scale=1.0,
     ):
         """
@@ -237,13 +240,17 @@ class MotionLossMV(SMPLLossMV):
 
         pred_data is data pertinent to the canonical prior coordinate frame
         cam_pred_data is for the camera coordinate frame
+        cam_pred_data received the input from the variable called "world_preds."
 
         loss rather than standard normal if given.
         """
         cam_pred_data["latent_pose"] = pred_data["latent_pose"]
         loss, stats_dict = super().forward(
-            observed_data, cam_pred_data, nsteps, valid_mask=valid_mask
+            observed_data_list, pred_data, nsteps, matching_obs_data, rt_pairs_tensor, num_views, valid_mask_multi
         )
+
+        valid_mask = valid_mask_multi[0] #Could be none or could be a valid mask
+        
 
         # prior to keep latent motion likely
         if "latent_motion" in pred_data and self.loss_weights["motion_prior"] > 0.0:
@@ -304,17 +311,22 @@ class MotionLossMV(SMPLLossMV):
             loss += self.loss_weights["bone_length"] * cur_loss
             stats_dict["bone_length"] = cur_loss
 
+
+        ##TODO: JOINTS3D WIll not be used here!
         # make sure rolled out joints match observations too
         if (
-            "joints3d" in observed_data
+            "joints3d" in observed_data_list[0]
             and "joints3d_rollout" in pred_data
             and self.loss_weights["joints3d_rollout"] > 0.0
         ):
-            cur_loss = joints3d_loss(
-                observed_data["joints3d"], pred_data["joints3d_rollout"], valid_mask
-            )
-            loss += self.loss_weights["joints3d_rollout"] * cur_loss
-            stats_dict["joints3d_rollout"] = cur_loss
+            cur_loss_mv = 0.0
+            for num_view in range(num_views):
+                cur_loss = joints3d_loss(
+                    observed_data_list[num_view]["joints3d"], pred_data["joints3d_rollout"], valid_mask
+                )
+                cur_loss_mv += cur_loss
+            loss += self.loss_weights["joints3d_rollout"] * cur_loss_mv
+            stats_dict["joints3d_rollout"] = cur_loss_mv
 
         # velocity 0 during contacts
         if (
@@ -340,17 +352,24 @@ class MotionLossMV(SMPLLossMV):
             loss += self.loss_weights["contact_height"] * cur_loss
             stats_dict["contact_height"] = cur_loss
 
+
+        ##TODO: FLOOR_REG WIll not be used here! (weights are sets to be 0)
         # floor is close to the initialization
         if (
             self.loss_weights["floor_reg"] > 0.0
             and "floor_plane" in pred_data
-            and "floor_plane" in observed_data
+            and "floor_plane" in observed_data_list[0]
         ):
-            cur_loss = floor_reg_loss(
-                pred_data["floor_plane"], observed_data["floor_plane"]
-            )
-            loss += self.loss_weights["floor_reg"] * nsteps * cur_loss
-            stats_dict["floor_reg"] = cur_loss
+        ##TODO figure out if we can do this for multi-view
+            cur_loss_mv = 0.0
+            for num_view in range(num_views):
+                cur_loss = floor_reg_loss(
+                    pred_data["floor_plane"], observed_data_list[num_view]["floor_plane"]
+                )
+                cur_loss_mv += cur_loss
+
+            loss += self.loss_weights["floor_reg"] * nsteps * cur_loss_mv
+            stats_dict["floor_reg"] = cur_loss_mv
 
         return loss, stats_dict
 

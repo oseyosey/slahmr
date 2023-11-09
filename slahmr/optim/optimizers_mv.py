@@ -517,10 +517,10 @@ class SmoothOptimizerMV(StageOptimizerMV):
 
 
 class MotionOptimizerMV(StageOptimizerMV):
-    name = "motion_fit"
+    name = "motion_fit_multi_view"
     stage = 2
 
-    def __init__(self, model, all_loss_weights, opt_cams=False, **kwargs):
+    def __init__(self, model, all_loss_weights, num_views, rt_pairs_tensor, matching_obs_data, opt_cams=False, **kwargs):
         self.opt_cams = opt_cams and model.opt_cams
         param_names = [
             "trans",
@@ -540,7 +540,8 @@ class MotionOptimizerMV(StageOptimizerMV):
             Logger.log(f"{self.name} OPTIMIZING CAMERAS")
             param_names += ["delta_cam_R", "cam_f"]
 
-        super().__init__(self.name, model, param_names, **kwargs)
+        #super().__init__(self.name, model, param_names, **kwargs)
+        super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs)
         self.set_loss(model, all_loss_weights[self.stage], **kwargs)
 
     def set_loss(
@@ -553,7 +554,7 @@ class MotionOptimizerMV(StageOptimizerMV):
         joints2d_sigma=100,
         **kwargs,
     ):
-        self.loss = MotionLoss(
+        self.loss = MotionLossMV(
             loss_weights,
             init_motion_prior=model.init_motion_prior,
             ignore_op_joints=OP_IGNORE_JOINTS,
@@ -566,7 +567,7 @@ class MotionOptimizerMV(StageOptimizerMV):
     def get_motion_scale(self):
         return 1.0
 
-    def forward_pass(self, obs_data, num_steps=-1):
+    def forward_pass(self, obs_data_list, num_steps=-1):
         p = self.model.params
         param_names = [
             "betas",
@@ -583,20 +584,37 @@ class MotionOptimizerMV(StageOptimizerMV):
 
         # track mask is the length of the sequence that contains num_steps of each track
         track_mask = world_preds.get("track_mask", None)
+
         T = track_mask.shape[1] if track_mask is not None else num_steps
         world_preds["cameras"] = p.get_cameras(np.arange(T))
-        if self.opt_cams:
+
+
+        ##TODO: figure if it's indeed the case. 
+        track_mask_multi = []
+        for num_view in range(self.num_views):
+            track_mask_multi.append(track_mask)
+
+         
+        if self.opt_cams: ##GAROT will not optimize camera
             cam_R, cam_t = p.get_extrinsics()
             world_preds["cam_R"], world_preds["cam_t"] = cam_R[:T], cam_t[:T]
 
-        obs_data = slice_dict(obs_data, 0, T)
+
+        obs_data_list_sliced = []
+        for obs_data in obs_data_list:
+            obs_data_sliced = slice_dict(obs_data, 0, T)
+            obs_data_list_sliced.append(obs_data_sliced)
+        
         motion_scale = self.get_motion_scale()
         loss, stats_dict = self.loss(
-            obs_data,
+            obs_data_list_sliced,
             preds,
             world_preds,
             self.model.seq_len,
-            valid_mask=track_mask,
+            self.matching_obs_data,
+            self.rt_pairs_tensor,
+            self.num_views,
+            valid_mask_multi=track_mask_multi,
             init_motion_scale=motion_scale,
         )
         return loss, stats_dict, (preds, world_preds)
@@ -619,7 +637,7 @@ class MotionOptimizerChunksMV(MotionOptimizerMV):
     :param chunk_steps (int) number of opt steps to spend on subsequent chunks
     """
 
-    name = "motion_chunks"
+    name = "motion_chunks_multi_view"
     stage = 2
 
     def __init__(self, *args, chunk_size=20, init_steps=20, chunk_steps=10, **kwargs):
@@ -652,20 +670,21 @@ class MotionOptimizerChunksMV(MotionOptimizerMV):
         num_frames = self.end_idx - self.start_idx
         return max(1.0, float(self.model.seq_len) / num_frames)
 
-    def forward_pass(self, obs_data):
-        return super().forward_pass(obs_data, num_steps=self.end_idx)
+    def forward_pass(self, obs_data_list):
+        return super().forward_pass(obs_data_list, num_steps=self.end_idx)
 
-    def vis_result(self, res_dir, obs_data, vis=None, **kwargs):
+    def vis_result(self, res_dir, obs_data, num_view, vis=None, **kwargs):
         print("start, end", self.start_idx, self.end_idx)
-        return super().vis_result(res_dir, obs_data, vis=vis, num_steps=self.end_idx)
+        return super().vis_result(res_dir, obs_data, num_view, vis=vis, num_steps=self.end_idx)
 
 
-class MotionOptimizerFreeze(MotionOptimizerMV):
+
+class MotionOptimizerFreezeMV(MotionOptimizerMV):
     """
     Only optimizing a subset of parameters
     """
 
-    name = "motion_freeze"
+    name = "motion_freeze_multi_view"
     stage = 2
 
     def __init__(self, model, all_loss_weights, no_contacts=True, **kwargs):

@@ -156,6 +156,8 @@ def run_opt(cfg, dataset, out_dir, device):
         optim = MotionOptimizerChunks(model, stage_loss_weights, **args, **opts)
         optim.run(obs_data, optim.num_iters, out_dir, vis, writer)
 
+
+    ## motion_refine seems to be unused by SLAHMR
     if "motion_refine" in cfg.optim:
         args = cfg.optim.motion_refine
         optim = MotionOptimizer(model, stage_loss_weights, **args, **opts)
