@@ -37,6 +37,7 @@ class StageOptimizerMV(object):
         param_names,
         num_views,
         rt_pairs_tensor,
+        matching_obs_data,
         lr=1.0,
         lbfgs_max_iter=20,
         save_every=10,
@@ -75,6 +76,7 @@ class StageOptimizerMV(object):
         ## Garot
         self.num_views = num_views
         self.rt_pairs_tensor = rt_pairs_tensor
+        self.matching_obs_data = matching_obs_data
 
     def set_opt_vars(self, param_names):
         Logger.log("Set param names:")
@@ -359,7 +361,7 @@ class RootOptimizerMV(StageOptimizerMV):
     ):
         ## optimize global orientation and root translation in the world frame
         param_names = ["trans", "root_orient"]
-        super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, **kwargs)
+        super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs)
 
         ## TODO Here they defined the root loss (what we need to change for multi-view!)
         ## TODO know if robust_loss_type = None (meaning they didn't use the points3D_loss)
@@ -374,8 +376,8 @@ class RootOptimizerMV(StageOptimizerMV):
 
 
         ## Matching obs data is a ditcionary of dictionary that stores the matching between pred data and obs data. 
-        self.matching_obs_data = matching_obs_data
-        #self.rt_pairs_tensor = rt_pairs_tensor # Lists of R,T tuples ( (T, 3, 3), (T, 3) )
+            # self.matching_obs_data = matching_obs_data
+            #self.rt_pairs_tensor = rt_pairs_tensor # Lists of R,T tuples ( (T, 3, 3), (T, 3) )
 
     def forward_pass(self, obs_data_multi):
         """
@@ -398,13 +400,16 @@ class RootOptimizerMV(StageOptimizerMV):
 
 
 class SMPLOptimizerMV(StageOptimizerMV):
-    name = "smpl_fit"
+    name = "smpl_fit_multi_view"
     stage = 0
 
     def __init__(
         self,
         model,
         all_loss_weights,
+        matching_obs_data,
+        rt_pairs_tensor,
+        num_views,
         use_chamfer=False,
         robust_loss_type="none",
         robust_tuning_const=4.6851,
@@ -415,9 +420,9 @@ class SMPLOptimizerMV(StageOptimizerMV):
         if model.opt_scale:
             param_names += ["world_scale"]
 
-        super().__init__(self.name, model, param_names, **kwargs)
+        super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs)
 
-        self.loss = SMPLLoss(
+        self.loss = SMPLLossMV(
             all_loss_weights[self.stage],
             ignore_op_joints=OP_IGNORE_JOINTS,
             joints2d_sigma=joints2d_sigma,
@@ -426,7 +431,7 @@ class SMPLOptimizerMV(StageOptimizerMV):
             robust_tuning_const=robust_tuning_const,
         )
 
-    def forward_pass(self, obs_data):
+    def forward_pass(self, obs_data_multi):
         """
         Takes in observed data, predicts the smpl parameters and returns loss
         """
@@ -436,19 +441,28 @@ class SMPLOptimizerMV(StageOptimizerMV):
         pred_data.update(self.model.params.get_vars())
 
         # compute data losses only
-        vis_mask = obs_data["vis_mask"] >= 0
-        loss, stats_dict = self.loss(obs_data, pred_data, self.model.seq_len, vis_mask)
+        vis_mask_multi = []
+        for num_view in range(self.num_views):
+            vis_mask = obs_data_multi[num_view]["vis_mask"] >= 0
+            vis_mask_multi.append(vis_mask)
+        if not vis_mask_multi:
+            vis_mask_multi = None
+
+        loss, stats_dict = self.loss(obs_data_multi, pred_data, self.model.seq_len, self.matching_obs_data, self.rt_pairs_tensor, self.num_views, valid_mask_multi=vis_mask_multi)
         return loss, stats_dict, pred_data
 
 
 class SmoothOptimizerMV(StageOptimizerMV):
-    name = "smooth_fit"
+    name = "smooth_fit_multi_view"
     stage = 1
 
     def __init__(
         self,
         model,
         all_loss_weights,
+        matching_obs_data,
+        rt_pairs_tensor,
+        num_views,
         use_chamfer=False,
         robust_loss_type="none",
         robust_tuning_const=4.6851,
@@ -461,9 +475,9 @@ class SmoothOptimizerMV(StageOptimizerMV):
         if model.opt_cams:
             param_names += ["cam_f", "delta_cam_R"]
 
-        super().__init__(self.name, model, param_names, **kwargs)
+        super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs)
 
-        self.loss = SMPLLoss(
+        self.loss = SMPLLossMV(
             all_loss_weights[self.stage],
             ignore_op_joints=OP_IGNORE_JOINTS,
             joints2d_sigma=joints2d_sigma,
@@ -472,7 +486,7 @@ class SmoothOptimizerMV(StageOptimizerMV):
             robust_tuning_const=robust_tuning_const,
         )
 
-    def forward_pass(self, obs_data):
+    def forward_pass(self, obs_data_multi):
         """
         Takes in observed data, predicts the smpl parameters and returns loss
         """
@@ -481,16 +495,24 @@ class SmoothOptimizerMV(StageOptimizerMV):
         pred_data["cameras"] = self.model.params.get_cameras()
         pred_data.update(self.model.params.get_vars())
 
-        # camera predictions
+        ## This is originally being commented out
+        # camera predictions 
         #         pts_ij, target, weight = self.model.params.get_reprojected_points()
         #         pred_data["bg2d_err"] = (
         #             (weight * (pts_ij - target) ** 2).sum(dim=(-1, -2)).mean()
         #         )
+
         pred_data["cam_R"], pred_data["cam_t"] = self.model.params.get_extrinsics()
 
         # compute data losses only
-        vis_mask = obs_data["vis_mask"] >= 0
-        loss, stats_dict = self.loss(obs_data, pred_data, self.model.seq_len, vis_mask)
+        vis_mask_multi = []
+        for num_view in range(self.num_views):
+            vis_mask = obs_data_multi[num_view]["vis_mask"] >= 0
+            vis_mask_multi.append(vis_mask)
+        if not vis_mask_multi:
+            vis_mask_multi = None
+
+        loss, stats_dict = self.loss(obs_data_multi, pred_data, self.model.seq_len, self.matching_obs_data, self.rt_pairs_tensor, self.num_views, valid_mask_multi=vis_mask_multi)
         return loss, stats_dict, pred_data
 
 

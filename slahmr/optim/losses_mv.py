@@ -175,20 +175,28 @@ SMPLLoss setup is same as RootLoss
 
 
 class SMPLLossMV(RootLossMV):
-    def forward(self, observed_data, pred_data, nsteps, valid_mask=None):
+    def forward(self, observed_data_list, pred_data, nsteps, matching_obs_data, rt_pairs_tensor, num_views, valid_mask_multi=None):
         """
         For fitting full shape and pose of SMPL.
         nsteps used to scale single-step losses
         """
         loss, stats_dict = super().forward(
-            observed_data, pred_data, valid_mask=valid_mask
+            observed_data_list, pred_data, matching_obs_data, rt_pairs_tensor, num_views, valid_mask_multi=None
         )
 
         # prior to keep latent pose likely
+        ## GAROT Implementation
         if "latent_pose" in pred_data and self.loss_weights["pose_prior"] > 0.0:
-            cur_loss = pose_prior_loss(pred_data["latent_pose"], valid_mask)
-            loss += self.loss_weights["pose_prior"] * cur_loss
-            stats_dict["pose_prior"] = cur_loss
+            cur_loss_mv = 0.0
+            for num_view in range(num_views):
+                if valid_mask_multi is not None:
+                    cur_loss = pose_prior_loss(pred_data["latent_pose"], valid_mask_multi[num_view])
+                else:
+                    cur_loss = pose_prior_loss(pred_data["latent_pose"])
+                cur_loss_mv += cur_loss
+
+            loss += self.loss_weights["pose_prior"] * cur_loss_mv
+            stats_dict["pose_prior"] = cur_loss_mv
 
         # prior to keep PCA shape likely
         if "betas" in pred_data and self.loss_weights["shape_prior"] > 0.0:

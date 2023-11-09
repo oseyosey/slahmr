@@ -164,15 +164,27 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
 
 
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 1...")
-    ##TODO: Set up RootOptimizerMV! 
-    breakpoint()
-    num_iters_root_mv = 30*10 ## Chunk size * ITER
+    ##Set up RootOptimizerMV!  ##
+    num_iters_root_mv = 30*5 ## Chunk size * ITER
     optim = RootOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
-    optim.run(obs_data_multi, num_iters_root_mv , out_dir_multi, vis_multi=vis_multi, writer=writer)
+    optim.run(obs_data_multi, num_iters_root_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
+
+    breakpoint()
+    print("RUNNING MULTI-VIEW OPTIMIZATION Stage 2...")
+    optim = SMPLOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
+    optim.run(obs_data_multi, num_iters_root_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
+
+    breakpoint()
+    args = cfg.optim.smooth
+    optim = SmoothOptimizerMV(
+        base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, opt_scale=args.opt_scale, **opts
+    )
+    optim.run(obs_data_multi, args.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer) # We might want to change the number of iterations here
+
+    print("RUNNING MULTI-VIEW OPTIMIZATION Stage 3...")
 
 
     return 
-
 
 
 
