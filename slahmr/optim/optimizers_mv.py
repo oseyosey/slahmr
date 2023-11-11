@@ -185,11 +185,16 @@ class StageOptimizerMV(object):
         ##TODO (res["cam_R"][0], res["cam_t"][0]))
         ##TODO We want to detect which view a and change res["cam_R"][0], res["cam_t"][0] to the corresponding view RT.
         cam_R, cam_t = self.rt_pairs_tensor[num_view]
-        cam_R_stacked = cam_R.repeat(3, 1, 1, 1)
-        cam_t_stacked = cam_t.repeat(3, 1, 1)
+
+        batch_size_obs_data = obs_data['joints2d'].shape[0]
+        cam_R_stacked = cam_R.repeat(batch_size_obs_data, 1, 1, 1) ## Bug Fixed
+        cam_t_stacked = cam_t.repeat(batch_size_obs_data, 1, 1) ## Bug Fixed
         res_dict['cam_R'] = cam_R_stacked
         res_dict['cam_t'] = cam_t_stacked
 
+
+        ## TODO Here IndexError: The shape of the mask [4] at index 0 does not match the shape of the indexed tensor [5, 6890, 3] at index 0
+        ## TODO: we probably want to have a stitched obs_data? 
         scene_dict = move_to(
             prep_result_vis(
                 res_dict,
@@ -245,7 +250,7 @@ class StageOptimizerMV(object):
         self.cur_step = 0
         self.loss.cur_step = 0
 
-        breakpoint()
+        # breakpoint()
 
         out_dir_init = out_dir_multi[0]
         res_dir_init = os.path.join(out_dir_init, self.name) ## Point to the directory 
@@ -280,6 +285,7 @@ class StageOptimizerMV(object):
             if (i + 1) % self.vis_every == 0:  # render
                 # visualize for every view
                 for num_view in range(self.num_views):
+                    breakpoint()
                     self.vis_result(res_dir_init, obs_data_multi[num_view], num_view, vis=vis_multi[num_view])
 
             self.cur_step = i
@@ -319,6 +325,7 @@ class StageOptimizerMV(object):
         self.save_checkpoint(out_dir_init)
         self.save_results(res_dir_init, seq_name)
         for num_view in range(self.num_views):
+            breakpoint()
             self.vis_result(res_dir_init, obs_data_multi[num_view], num_view, vis=vis_multi[num_view])
 
     def optim_step(self, obs_data_multi, writer=None):
@@ -538,7 +545,7 @@ class MotionOptimizerMV(StageOptimizerMV):
 
         if self.opt_cams:
             Logger.log(f"{self.name} OPTIMIZING CAMERAS")
-            param_names += ["delta_cam_R", "cam_f"]
+            param_names += ["delta_cam_R", "cam_f"] ## if opt_cams, ["delta_cam_R", "cam_f"] will be improved.
 
         #super().__init__(self.name, model, param_names, **kwargs)
         super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs)
@@ -595,10 +602,9 @@ class MotionOptimizerMV(StageOptimizerMV):
             track_mask_multi.append(track_mask)
 
          
-        if self.opt_cams: ##GAROT will not optimize camera
+        if self.opt_cams: ##GAROT will not optimize camera?
             cam_R, cam_t = p.get_extrinsics()
             world_preds["cam_R"], world_preds["cam_t"] = cam_R[:T], cam_t[:T]
-
 
         obs_data_list_sliced = []
         for obs_data in obs_data_list:
@@ -648,6 +654,7 @@ class MotionOptimizerChunksMV(MotionOptimizerMV):
 
     @property
     def num_iters(self):
+        ## Num Iters are defined by chunk_steps as well
         num_chunks = int(np.ceil(self.model.seq_len / self.chunk_size)) + 1
         return self.init_steps + self.chunk_steps * num_chunks
 

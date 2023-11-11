@@ -38,7 +38,7 @@ class StageOptimizer(object):
         lr=1.0,
         lbfgs_max_iter=20,
         save_every=10,
-        vis_every=-1, ## we probably want to change this for debug 
+        vis_every=10, ## we probably want to change this for debug 
         save_meshes=True,
         max_chunk_steps=10,
         **kwargs, ## TODO: Need to understand this more

@@ -77,9 +77,12 @@ class RootLossMV(StageLossMV):
 
                     ## select the pred_data (to match with our observed_data) ##
                     match_index = [index for index in range(len(observed_data['joints2d']))]
+
+                    ##joints3d_op last element is somehow nan.
                     joints2d = cam_util.reproject(
                         pred_data["joints3d_op"], *pred_data["cameras"] ##TODO: adapt to multi-view
                         )
+                    
                     joints2d_select = joints2d[match_index]
                     if valid_mask_multi is not None:
                         cur_loss = self.joints2d_loss(
@@ -94,8 +97,10 @@ class RootLossMV(StageLossMV):
                     matching_obs_data_per_view = matching_obs_data[num_view]
 
                     cam_R, cam_t = rt_pairs_tensor[num_view] ## We may need to check the dimension ([49, 3, 3]), we want ([3, 49, 3, 3]). 
-                    cam_R = cam_R.repeat(3, 1, 1, 1)
-                    cam_t = cam_t.repeat(3, 1, 1)
+
+                    batch_size_obs_data = observed_data["joints2d"].shape[0]
+                    cam_R = cam_R.repeat(batch_size_obs_data, 1, 1, 1) ##TODO: Solved. Adapt to Batch size
+                    cam_t = cam_t.repeat(batch_size_obs_data, 1, 1)
 
                     _, _, cam_f, cam_center = pred_data["cameras"]
                     joints2d = cam_util.reproject(
@@ -106,6 +111,7 @@ class RootLossMV(StageLossMV):
                     ##TODO: select the pred_data (to match with our observed_data) ##
                     joints2d_select = torch.empty_like(joints2d)
 
+                    ##TODO: here is a potential problem. It seems like joints2d_select is still the same dimension as before?
                     for world_index, camera_data in matching_obs_data_per_view.items():
                         camera_index, first_appe_t, last_appe_t = camera_data
                         joints2d_select[camera_index, first_appe_t:last_appe_t+1] = joints2d[world_index, first_appe_t:last_appe_t+1]
@@ -126,6 +132,7 @@ class RootLossMV(StageLossMV):
 
         # smooth 3d joint motion
         if self.loss_weights["joints3d_smooth"] > 0.0:
+     
             ## TODO Mutli-view
             cur_loss_mv = 0.0
             for num_view in range(num_views):
@@ -133,7 +140,21 @@ class RootLossMV(StageLossMV):
                     valid_mask = valid_mask_multi[num_view]
                 else:
                     valid_mask = None
-                cur_loss = joints3d_smooth_loss(pred_data["joints3d"], valid_mask) #TODO
+
+                ##TODO: select the pred_data (to match with our observed_data) ##
+                pred_joints3d_select = torch.empty((observed_data_list[num_view]['joints2d'].shape[0],) + (pred_data["joints3d"].shape[1], pred_data["joints3d"].shape[2], pred_data["joints3d"].shape[3]))
+                if num_view == 0:
+                    for index in range(observed_data_list[num_view]['joints2d'].shape[0]):
+                        pred_joints3d_select[index] = pred_data["joints3d"][index]
+                else:
+                    matching_obs_data_per_view = matching_obs_data[num_view] 
+                    for world_index, camera_data in matching_obs_data_per_view.items():
+                        camera_index, first_appe_t, last_appe_t = camera_data
+                        pred_joints3d_select[camera_index, first_appe_t:last_appe_t+1] = pred_data["joints3d"][world_index, first_appe_t:last_appe_t+1]
+                
+                device = pred_data["joints3d"].device
+                pred_joints3d_select = pred_joints3d_select.to(device)
+                cur_loss = joints3d_smooth_loss(pred_joints3d_select, valid_mask) #TODO
                 cur_loss_mv += cur_loss
             loss += self.loss_weights["joints3d_smooth"] * cur_loss_mv
             stats_dict["joints3d_smooth"] = cur_loss_mv

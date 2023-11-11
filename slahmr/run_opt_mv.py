@@ -2,6 +2,7 @@ import os
 import glob
 import json
 import subprocess
+import pickle
 
 import torch
 from torch.utils.data import DataLoader
@@ -75,7 +76,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
 
     # check whether the cameras are static
     # if static, cannot optimize scale
-    cfg.model.opt_scale &= not dataset_multi[0].cam_data.is_static
+    # cfg.model.opt_scale &= not dataset_multi[0].cam_data.is_static
     cfg.model.opt_scale = False # Hardcoded for now
     Logger.log(f"OPT SCALE {cfg.model.opt_scale}")
 
@@ -127,7 +128,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     ## All poses are in their own INDEPENDENT camera reference frames.
     ## But if images are static, then poses should be in the same camera refernce frames. 
     base_model = BaseSceneModelMV(
-        B_INIT, T, body_model_multi, pose_prior, fit_gender=fit_gender, rt_pairs=rt_pairs, view_nums=cfg.data.multi_view_num, **margs
+        B_INIT, T, body_model_multi, pose_prior, fit_gender=fit_gender, rt_pairs=rt_pairs, view_nums=cfg.data.multi_view_num, path_body_model = paths.smpl, **margs
     )
     
     ## Initialize base_model with SLAHMR+4D Human results | Multi-view ##
@@ -156,6 +157,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
                 bg_paths=dataset_multi[view_num].sel_img_paths,
                 fps=cfg.fps,
             )
+            breakpoint()
             vis_multi.append(vis)
         else:
             vis_multi = None
@@ -220,9 +222,9 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
 
     if "motion_chunks" in cfg.optim:
         args = cfg.optim.motion_chunks
+        args["chunk_steps"] = args["chunk_steps"] * cfg.data.multi_view_num * 2
         optim = MotionOptimizerChunksMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
         optim.run(obs_data_multi, optim.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer)
-
 
     return 
 
@@ -380,6 +382,7 @@ def main(cfg: DictConfig):
         out_dir_new = out_dir.replace(last_segment, cfg_multi[num_view].data.name)
         out_dir_muli.append(out_dir_new)
 
+
     ## Run PHALP for each view ## 
     dataset_multi = []
     for num_view in range(cfg.data.multi_view_num):     
@@ -403,11 +406,16 @@ def main(cfg: DictConfig):
         save_track_info(dataset, out_dir_muli[num_view])
 
         ## dataset.data_out dictionary output
-        import pickle
-        with open(f"{out_dir_muli[num_view]}/complete_track_data.pkl", "wb") as f:
-            dataset.load_data()
-            pickle.dump(dataset.data_dict, f)
-        print("SAVED COMPLETE TRACK INFO")
+
+        phalp_file_path = f"{out_dir_muli[num_view]}/complete_track_data.pkl"
+        if not os.path.exists(phalp_file_path):
+            with open(phalp_file_path, "wb") as f:
+                #dataset.load_data()
+                pickle.dump(dataset.data_dict, f)
+            print("SAVED COMPLETE TRACK INFO")
+        else:
+            print("COMPLETE TRACK INFO ALREADY EXISTS")
+        
 
         """ Get data for each track
             data_dict = {
@@ -432,6 +440,11 @@ def main(cfg: DictConfig):
     device = get_device(0)
     if cfg.run_opt:
         run_opt(cfg_multi[0], dataset_multi[0], out_dir_muli[0], device)
+
+    if cfg.run_vis:
+        run_vis(
+            cfg_multi[0], dataset_multi[0], out_dir_muli[0], 0, **cfg.get("vis", dict())
+        )
     
 
     ## Run Multi-view PnP to obtain Camera Pose ##
@@ -445,7 +458,7 @@ def main(cfg: DictConfig):
     slahmr_data_init_dict = {k: torch.from_numpy(v) for k, v in slahmr_data_init_dict.items()}
     slahmr_data_init_dict = move_to(slahmr_data_init_dict, device)
 
-
+    # breakpoint()
 
     ### Second-stage: Multi-view Optimization ###
     # 1. Run multi-view optimziation 

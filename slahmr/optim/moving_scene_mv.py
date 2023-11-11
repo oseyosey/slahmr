@@ -180,7 +180,7 @@ class MovingSceneModelMV(BaseSceneModelMV):
         if self.async_tracks and "track_interval" in obs_data:
             print("asynchronous tracks")
             interval = obs_data["track_interval"]  # (B, 2)
-            start, end = interval[:, 0], interval[:, 1]
+            start, end = interval[:, 0], interval[:, 1] ## Essentially just index
             self.track_start, self.track_end = start, end
             param_dict = select_dict_segments(
                 param_dict, start, end, names=["trans", "root_orient", "latent_pose"]

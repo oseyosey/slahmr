@@ -104,7 +104,7 @@ class MultiPeopleDataset(Dataset):
         )
         end_idx = end_idx if end_idx > 0 else len(img_files)
         self.data_start, self.data_end = start_idx, end_idx
-        img_files = img_files[start_idx:end_idx]
+        img_files = img_files[start_idx:end_idx] ## TODO！img_files[start_idx-start_idx:end_idx-start_idx]
         self.img_names = [get_name(f) for f in img_files]
         self.num_imgs = len(self.img_names)
 

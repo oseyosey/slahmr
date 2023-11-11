@@ -159,3 +159,6 @@ class CameraParams(Params):
         cam_R = cam_R.repeat(B, 1, 1, 1)
         cam_t = cam_t.repeat(B, 1, 1)
         return cam_R, cam_t, cam_f, cam_center
+    
+    def set_batch(self, new_batch):
+        self.batch_size = new_batch

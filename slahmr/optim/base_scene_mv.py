@@ -6,12 +6,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from body_model import SMPL_JOINTS, KEYPT_VERTS, smpl_to_openpose, run_smpl
+
+
+
+
 from geometry.rotation import (
     rotation_matrix_to_angle_axis,
     angle_axis_to_rotation_matrix,
 )
 from util.logger import Logger
 from util.tensor import move_to, detach_all
+
+from util.loaders import (
+    load_smpl_body_model
+)
 
 from .helpers import estimate_initial_trans
 from .params import CameraParams
@@ -55,6 +63,7 @@ class BaseSceneModelMV(nn.Module):
         rt_pairs_tensor=None, # transformed version of rt_pairs in tensor format
         view_nums=0, # number of views
         pairing_info =None,
+        path_body_model = None,
         **kwargs,
     ):
         super().__init__()
@@ -94,6 +103,7 @@ class BaseSceneModelMV(nn.Module):
 
         self.rt_pairs_tensor = rt_pairs_tensor
         self.pairing_info = pairing_info
+        self.path_body_model = path_body_model
 
     def initialize(self, obs_data_list, cam_data, slahmr_data_init, debug=False):
         """
@@ -123,7 +133,7 @@ class BaseSceneModelMV(nn.Module):
             init_betas = torch.zeros(B, self.num_betas, device=device)
 
             if self.use_init and num_view == 0: # Appending SLAHMR Results
-                init_pose = slahmr_data_init["pose_body"].view(3, 49, 21, 3) # origionally (3, 49, 63)
+                init_pose = slahmr_data_init["pose_body"].view(self.batch_size, self.seq_len, 21, 3) # origionally (B, T, 63)
                 init_pose = init_pose[:, :, :J_BODY, :]
                 init_pose_latent = self.pose2latent(init_pose)
             elif self.use_init and "init_body_pose" in obs_data:
@@ -151,7 +161,7 @@ class BaseSceneModelMV(nn.Module):
                 t_c2w = -torch.einsum("tij,tj->ti", R_c2w, t_w2c)
  
             if self.use_init and num_view == 0: ## Appending SLAHMR Results
-                init_rot = slahmr_data_init["root_orient"] 
+                init_rot = slahmr_data_init["root_orient"]
                 init_rot_mat = angle_axis_to_rotation_matrix(init_rot)
                 init_rot_mat = torch.einsum("tij,btjk->btik", R_c2w, init_rot_mat)
                 init_rot = rotation_matrix_to_angle_axis(init_rot_mat)
@@ -169,7 +179,7 @@ class BaseSceneModelMV(nn.Module):
 
             init_trans = torch.zeros(B, T, 3, device=device)
             if self.use_init and num_view == 0: ## Appending SLAHMR Results
-                pred_data = self.pred_smpl(init_trans, init_rot, init_pose, init_betas) # Note that here init_trans is zeros tensors
+                pred_data = self.pred_smpl(init_trans, init_rot, init_pose, init_betas, num_view) # Note that here init_trans is zeros tensors
                 root_loc = pred_data["joints3d"][..., 0, :]  # (B, T, 3)
                 init_trans = obs_data["init_trans"]  # (B, T, 3)
                 init_trans = (
@@ -179,7 +189,7 @@ class BaseSceneModelMV(nn.Module):
                 )
             elif self.use_init and "init_trans" in obs_data:
                 # must offset by the root location before applying camera to world transform
-                pred_data = self.pred_smpl(init_trans, init_rot, init_pose, init_betas)
+                pred_data = self.pred_smpl(init_trans, init_rot, init_pose, init_betas, num_view)
                 root_loc = pred_data["joints3d"][..., 0, :]  # (B, T, 3)
                 init_trans = obs_data["init_trans"]  # (B, T, 3)
                 ## here it's calculating the root translation in the world coordiante frame using R(R_c2w) and T(t_c2w) with init_trans (Root translation in the camera frame)
@@ -201,8 +211,9 @@ class BaseSceneModelMV(nn.Module):
             ##  Here we are using the 4D Human results for the appearance embedding for view 0 (reference view)
             init_appe = obs_data['init_appe'] if self.use_init and 'init_appe' in obs_data else None
 
+
             ## Recompute pred_smpl_data_list in the world frame (with updated init_trans)
-            pred_data_world = self.pred_smpl(init_trans, init_rot, init_pose, init_betas)
+            pred_data_world = self.pred_smpl(init_trans, init_rot, init_pose, init_betas, num_view)
             pred_smpl_data_list.append(pred_data_world)
             rt_pairs_tensor.append((R_w2c, t_w2c))
 
@@ -220,6 +231,7 @@ class BaseSceneModelMV(nn.Module):
         if debug:
             ## 先把所有需要的东西存下来，放在Jupyter Notebook里操作
             import pickle
+
             # Create a dictionary with the variables as keys
             data_to_store = {
                 "init_pose_latent_list": init_pose_latent_list,  
@@ -243,12 +255,28 @@ class BaseSceneModelMV(nn.Module):
         init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world, matching_obs_data = self.stitch_world_tracklet(init_pose_latent_list, init_betas_list, 
                                                                                                                                    init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list, obs_data_list, device)
 
+        #TODO: init_trans_world, init_rot_world, init_rot_world last subject [4] is all 0s, check why.  Solved! Edge cases when num element is = 1
+
+
         self.params.set_param("latent_pose", init_pose_latent_world) ## pose in the world frame
         self.params.set_param("betas", init_betas_world) ## beta in the world frame
         self.params.set_param("trans", init_trans_world) ## root translation in the world frame
         self.params.set_param("root_orient", init_rot_world) ## root orientation in the world frame 
 
-        if debug:
+
+        ## Obtain new batch size (number of sequences) to optimie 
+        b_stitched = init_pose_latent_world.shape[0] # number of sequences to optimize
+
+        ## Update batch size and body model in BaseSceneModelMV
+        body_model_stitch, fit_gender = load_smpl_body_model(self.path_body_model, b_stitched * self.seq_len, device=device)
+        self.update_batch(b_stitched, body_model_stitch)
+
+
+        ### Tracking Results Storing ### 
+        track_flag = False
+        if debug or track_flag:
+            import pickle
+            pred_data_world = self.pred_smpl(init_trans, init_rot, self.latent2pose(init_pose_latent_world), init_betas_world, num_view)
             # Create a dictionary with the variables as keys
             data_to_store_stitched = {
                 "init_pose_latent_world": init_pose_latent_world,  
@@ -262,8 +290,6 @@ class BaseSceneModelMV(nn.Module):
                 pickle.dump(data_to_store_stitched, handle, protocol=pickle.HIGHEST_PROTOCOL)
                 print("Stitched Data saved to pickle file")
 
-        ## Obtain new batch size (number of sequences) to optimie 
-        b_stitched = init_pose_latent_world.shape[0] # number of sequences to optimize
 
         return rt_pairs_tensor, matching_obs_data, b_stitched 
 
@@ -302,7 +328,6 @@ class BaseSceneModelMV(nn.Module):
                 selected_tracks, selected_tracks_indices, has_first_appearance = self.select_first_appearance(init_rot_list, view, t_)
                 if has_first_appearance:
                     # match selected tracklet with world tracklet (SLAHMR Results)
-
                     set_counter = Counter() # for voting
                     for look_foward in range(0, 25): # look forward 24 frames
                         if t_+look_foward < self.seq_len:
@@ -571,7 +596,8 @@ class BaseSceneModelMV(nn.Module):
         """
         Averages the pose latents in a 2D list with weighted averaging on the corresponding pose representation.
         The first latent tensor in each sublist is given a preferential weight based on the specified percentage,
-        emphasizing its impact on the weighted average.
+        emphasizing its impact on the weighted average. If a sublist contains only a single pose latent, 
+        it is returned as the weighted average without further calculation.
 
         Parameters:
         pose_latent_2D_list (list of list of torch.Tensor): A list where each element is a sublist containing tensors of pose latent representation.
@@ -584,39 +610,41 @@ class BaseSceneModelMV(nn.Module):
 
         # Process each sublist
         for latent_list in pose_latent_2D_list:
-            # Calculate the total weight and the weight of the first element
-            total_elements_weight = len(latent_list) - 1  # Total weight of elements except the first
-            first_element_weight = total_elements_weight * (first_element_weight_percentage / (100 - first_element_weight_percentage))
-            weights = [first_element_weight] + [1] * (len(latent_list) - 1)
+            if len(latent_list) == 1:
+                # If there's only one latent pose, use it as the weighted average directly
+                weighted_averages_latent.append(latent_list[0])
+            else:
+                # Calculate the total weight and the weight of the first element
+                total_elements_weight = len(latent_list) - 1  # Total weight of elements except the first
+                first_element_weight = total_elements_weight * (first_element_weight_percentage / (100 - first_element_weight_percentage))
+                weights = [first_element_weight] + [1] * (len(latent_list) - 1)
 
-            poses = []
-            # Convert each latent tensor to a pose tensor
-            for latent in latent_list:
-                # Add a batch dimension B
-                latent_unsqz = latent.unsqueeze(0)
-                pose = self.latent2pose(latent_unsqz)
-                # Remove the batch dimension after conversion
-                pose_sqz = pose.squeeze(0)
-                poses.append(pose_sqz)
+                poses = []
+                # Convert each latent tensor to a pose tensor
+                for latent in latent_list:
+                    # Add a batch dimension B
+                    latent_unsqz = latent.unsqueeze(0)
+                    pose = self.latent2pose(latent_unsqz)
+                    # Remove the batch dimension after conversion
+                    pose_sqz = pose.squeeze(0)
+                    poses.append(pose_sqz)
 
-            # Perform weighted average on poses
-            weighted_sum = sum(p * w for p, w in zip(poses, weights))
-            weighted_average_pose = weighted_sum / sum(weights)
+                # Perform weighted average on poses
+                weighted_sum = sum(p * w for p, w in zip(poses, weights))
+                weighted_average_pose = weighted_sum / sum(weights)
 
-            # Add the batch dimension before converting back to latent
-            weighted_average_pose_unsqz = weighted_average_pose.unsqueeze(0)
-            weighted_average_latent = self.pose2latent(weighted_average_pose_unsqz)
-            # Remove the batch dimension to match the original size
-            weighted_average_latent_sqz = weighted_average_latent.squeeze(0)
+                # Add the batch dimension before converting back to latent
+                weighted_average_pose_unsqz = weighted_average_pose.unsqueeze(0)
+                weighted_average_latent = self.pose2latent(weighted_average_pose_unsqz)
+                # Remove the batch dimension to match the original size
+                weighted_average_latent_sqz = weighted_average_latent.squeeze(0)
 
-            weighted_averages_latent.append(weighted_average_latent_sqz)
+                weighted_averages_latent.append(weighted_average_latent_sqz)
 
         # Combine all weighted average latents into a single tensor
         weighted_averages_latent_tensor = torch.stack(weighted_averages_latent, dim=0)
 
         return weighted_averages_latent_tensor
-
-
 
 
     def update_pairing_info(self, pairing_info_all_views):
@@ -629,7 +657,7 @@ class BaseSceneModelMV(nn.Module):
         Multi
         """
         self.batch_size = batch_size_new
-        self.params = CameraParams(batch_size_new)
+        self.params.set_batch(batch_size_new)
         self.body_model = body_model_new
 
 
@@ -719,7 +747,7 @@ class BaseSceneModelMV(nn.Module):
     def pred_params_smpl(self, reproj=True):
         body_pose = self.latent2pose(self.params.latent_pose)
         pred_data = self.pred_smpl(
-            self.params.trans, self.params.root_orient, body_pose, self.params.betas
+            self.params.trans, self.params.root_orient, body_pose, self.params.betas ##Problem! Trans, Root_orient last is nan and 0s. 
         )
 
         return pred_data

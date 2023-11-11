@@ -7,10 +7,11 @@ def normalize_quaternion(quaternion):
     norm = torch.norm(quaternion, p=2, dim=-1, keepdim=True)
     return quaternion / (norm + 1e-8)  # Adding a small epsilon to avoid division by zero
 
-def average_rotations(rot_vec_list, first_element_weight_percentage):
+def average_rotations(rot_vec_list, first_element_weight_percentage=50.0):
     """
     Averages a list of rotation vectors with a specified weighting scheme. The first rotation vector 
     is assigned a weight according to the specified percentage of the total weight, emphasizing its significance.
+    If the list contains only a single rotation vector, it is returned as is.
 
     Parameters:
     rot_vec_list (list of torch.Tensor): List of tensors of rotation vectors.
@@ -19,10 +20,14 @@ def average_rotations(rot_vec_list, first_element_weight_percentage):
     Returns:
     torch.Tensor: The averaged rotation vector.
     """
+    # Handle single-element lists
+    if len(rot_vec_list) == 1:
+        return rot_vec_list[0]
+
     # Convert each list of rotation vectors to quaternions
     quats_list = [tgm.angle_axis_to_quaternion(rot_vec) for rot_vec in rot_vec_list]
 
-    # Calculate the total weight and the weight of the first element for each sublist
+    # Calculate the total weight and the weight of the first element
     total_elements_weight = len(quats_list) - 1
     first_element_weight = total_elements_weight * (first_element_weight_percentage / (100 - first_element_weight_percentage))
     weights = [first_element_weight] + [1] * (len(quats_list) - 1)
@@ -47,7 +52,8 @@ def average_rotations(rot_vec_list, first_element_weight_percentage):
 def calculate_weighted_averages_rot_2D(rot_2D_list, first_element_weight_percentage=70.0):
     """
     Applies average_rotations to each sublist of rotation vectors in a larger list, with a specified weight 
-    for the first element in each sublist based on the given percentage of the total weight.
+    for the first element in each sublist based on the given percentage of the total weight. If a sublist 
+    contains only a single rotation vector, it is returned as the average without further calculation.
 
     Parameters:
     rot_2D_list (list of list of torch.Tensor): List containing sublists of rotation vectors.
@@ -56,25 +62,35 @@ def calculate_weighted_averages_rot_2D(rot_2D_list, first_element_weight_percent
     Returns:
     torch.Tensor: A tensor of the averaged rotation vectors for each sublist.
     """
-    averaged_rotations = [average_rotations(rot_vec_list, first_element_weight_percentage) for rot_vec_list in rot_2D_list]
+    # Process each sublist
+    averaged_rotations = []
+    for rot_vec_list in rot_2D_list:
+        if len(rot_vec_list) == 1:
+            # If there's only one rotation vector, append it directly
+            averaged_rotations.append(rot_vec_list[0])
+        else:
+            # Else, compute the weighted average
+            averaged_rotations.append(average_rotations(rot_vec_list, first_element_weight_percentage))
     
+    # Combine all averaged rotation vectors into a single tensor
     averaged_rotations_tensor = torch.stack(averaged_rotations, dim=0)
     
     return averaged_rotations_tensor
 
 # Example usage:
 # Assume rot_2D_list is a list of lists, where each sublist contains tensors of rotation vectors
-# 50.0 represents the percentage of the total weight for the first element in each sublist
-# averaged_rotations_tensor = calculate_weighted_averages_rot_2D(rot_2D_list, 50.0)
+# 70.0 represents the percentage of the total weight for the first element in each sublist
+# averaged_rotations_tensor = calculate_weighted_averages_rot_2D(rot_2D_list, 70.0)
+
 
 
 
 
 def calculate_weighted_averages_trans_2D(trans_2D_list, first_element_weight_percentage=75.0):
     """
-    Computes the weighted averages of 2D translation parameters from a list of translation vector lists,
-    with a specified percentage of the total weight assigned to the first translation vector in each sublist.
-    This allows for emphasizing the significance of the initial translation vector relative to the others.
+    Computes the weighted averages of 2D translation parameters from a list of translation vector lists.
+    The first translation vector in each sublist is assigned a preferential weight based on the specified percentage.
+    In the case of a single-element sublist, the single translation vector is returned as is.
 
     Parameters:
     trans_2D_list (list of list of torch.Tensor): A list where each element is a sublist containing 2D translation vectors.
@@ -83,21 +99,23 @@ def calculate_weighted_averages_trans_2D(trans_2D_list, first_element_weight_per
     Returns:
     torch.Tensor: A tensor containing the weighted averages of the translation vectors from each sublist.
     """
-    weights_list = []
-
-    # Calculate the total weight and the weight of the first element for each sublist
-    for trans_list in trans_2D_list:
-        total_elements_weight = len(trans_list) - 1  # Total weight of elements except the first
-        first_element_weight = total_elements_weight * (first_element_weight_percentage / (100 - first_element_weight_percentage))
-        weights = [first_element_weight] + [1] * (len(trans_list) - 1)
-        weights_list.append(weights)
-
     weighted_averages = []
 
     # Compute the weighted average for each sublist using the assigned weights
-    for trans_list, weights in zip(trans_2D_list, weights_list):
-        weighted_average = sum(t * w for t, w in zip(trans_list, weights)) / sum(weights)
-        weighted_averages.append(weighted_average)
+    for trans_list in trans_2D_list:
+        # Check if there is only one element in the sublist
+        if len(trans_list) == 1:
+            # Return the single element as is
+            weighted_averages.append(trans_list[0])
+        else:
+            # Calculate the total weight and the weight of the first element
+            total_elements_weight = len(trans_list) - 1
+            first_element_weight = total_elements_weight * (first_element_weight_percentage / (100 - first_element_weight_percentage))
+            weights = [first_element_weight] + [1] * (len(trans_list) - 1)
+
+            weighted_sum = sum(t * w for t, w in zip(trans_list, weights))
+            weighted_average = weighted_sum / sum(weights)
+            weighted_averages.append(weighted_average)
         
     # Combine the weighted averages into a single tensor
     weighted_averages_tensor = torch.stack(weighted_averages, dim=0)
@@ -105,11 +123,13 @@ def calculate_weighted_averages_trans_2D(trans_2D_list, first_element_weight_per
     return weighted_averages_tensor
 
 
+
 def calculate_weighted_averages_betas_2D(betas_2D_list, first_element_weight_percentage=50.0):
     """
     Calculates the weighted averages of 2D shape parameters from a list of shape parameter lists.
     This function assigns a preferential weight to the first shape parameter in each sublist based on a 
     specified percentage, which represents its relative importance in the weighted average calculation.
+    If a sublist contains only a single shape parameter, it is returned as the weighted average.
 
     Parameters:
     betas_2D_list (list of list of torch.Tensor): A list where each element is a sublist containing 2D shape parameters.
@@ -118,21 +138,22 @@ def calculate_weighted_averages_betas_2D(betas_2D_list, first_element_weight_per
     Returns:
     torch.Tensor: A tensor containing the weighted averages of the shape parameters from each sublist.
     """
-    weights_list = []
-
-    # Calculate the total weight and the weight of the first element for each sublist
-    for beta_list in betas_2D_list:
-        total_elements_weight = len(beta_list) - 1  # Total weight of elements except the first
-        first_element_weight = total_elements_weight * (first_element_weight_percentage / (100 - first_element_weight_percentage))
-        weights = [first_element_weight] + [1] * (len(beta_list) - 1)
-        weights_list.append(weights)
-
     weighted_averages = []
 
     # Calculate the weighted average for each sublist using the created weights
-    for beta_list, weights in zip(betas_2D_list, weights_list):
-        weighted_average = sum(b * w for b, w in zip(beta_list, weights)) / sum(weights)
-        weighted_averages.append(weighted_average)
+    for beta_list in betas_2D_list:
+        # Handle single-element sublists by returning the element itself
+        if len(beta_list) == 1:
+            weighted_averages.append(beta_list[0])
+        else:
+            # Calculate the total weight and the weight of the first element
+            total_elements_weight = len(beta_list) - 1  # Total weight of elements except the first
+            first_element_weight = total_elements_weight * (first_element_weight_percentage / (100 - first_element_weight_percentage))
+            weights = [first_element_weight] + [1] * (len(beta_list) - 1)
+
+            weighted_sum = sum(b * w for b, w in zip(beta_list, weights))
+            weighted_average = weighted_sum / sum(weights)
+            weighted_averages.append(weighted_average)
         
     # Stack the weighted averages to form a tensor
     weighted_averages_tensor = torch.stack(weighted_averages, dim=0)
@@ -143,6 +164,7 @@ def calculate_weighted_averages_betas_2D(betas_2D_list, first_element_weight_per
 # betas_2D_list is your data list of lists
 # 50.0 represents the percentage of the total weight for the first element
 # weighted_betas = calculate_weighted_averages_betas_2D(betas_2D_list, 50.0)
+
 
 
 
