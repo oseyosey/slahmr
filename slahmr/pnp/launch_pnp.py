@@ -38,7 +38,6 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device)
     frame = len(cross_view_matching['cross_view_match'])
 
 
-
     ## Load 3D keypoints for SLAHMR (single vieww)
     keypoints_3d_motion_path = f"{keypoints_3d_path}/motion_chunks/" 
     data_dict_slahmr_world = get_highest_motion_data(keypoints_3d_motion_path)

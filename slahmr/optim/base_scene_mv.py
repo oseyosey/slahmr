@@ -208,7 +208,7 @@ class BaseSceneModelMV(nn.Module):
                     obs_data["intrins"][:, 0],
                 )
 
-            ##  Here we are using the 4D Human results for the appearance embedding for view 0 (reference view)
+            ## Here we are using the 4D Human results for the appearance embedding for view 0 (reference view)
             init_appe = obs_data['init_appe'] if self.use_init and 'init_appe' in obs_data else None
 
 
@@ -247,7 +247,7 @@ class BaseSceneModelMV(nn.Module):
             pickle_file_path = 'stich_world_data.pickle' # save to here '/share/kuleshov/jy928/slahmr/outputs/logs/images-val/2023-11-06/Camera0-all-shot-0-1-50'
             with open(pickle_file_path, 'wb') as handle:
                 pickle.dump(data_to_store, handle, protocol=pickle.HIGHEST_PROTOCOL)
-                print("Data saved to pickle file")
+                print("Stitch Data Init saved to pickle file")
             breakpoint()
 
         
@@ -256,6 +256,7 @@ class BaseSceneModelMV(nn.Module):
                                                                                                                                    init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list, obs_data_list, device)
 
         #TODO: init_trans_world, init_rot_world, init_rot_world last subject [4] is all 0s, check why.  Solved! Edge cases when num element is = 1
+
 
 
         self.params.set_param("latent_pose", init_pose_latent_world) ## pose in the world frame
@@ -273,23 +274,28 @@ class BaseSceneModelMV(nn.Module):
 
 
         ### Tracking Results Storing ### 
-        track_flag = False
+        track_flag = True
         if debug or track_flag:
             import pickle
-            pred_data_world = self.pred_smpl(init_trans, init_rot, self.latent2pose(init_pose_latent_world), init_betas_world, num_view)
+            pred_data_world = self.pred_smpl(init_trans_world, init_rot_world, self.latent2pose(init_pose_latent_world), init_betas_world)
             # Create a dictionary with the variables as keys
             data_to_store_stitched = {
                 "init_pose_latent_world": init_pose_latent_world,  
                 "init_pose_world":  self.latent2pose(init_pose_latent_world), 
                 "init_betas_world": init_betas_world,         
                 "init_trans_world": init_trans_world,        
-                "init_rot_world": init_rot_world   
+                "init_rot_world": init_rot_world,
+                "init_pred_smpl_data_world": pred_data_world,
+                "rt_pairs": self.rt_pairs,
+                "rt_pairs_tensor": self.rt_pairs_tensor,    
+                "init_cam_data": cam_data, # camera pose (RT) in the world frame for view 0,
+                #"init_intrinsics": obs_data_list[0][0]["intrins"], # camera intrinsics for view 0
             }
+
             pickle_file_path = 'stich_world_data_stitched.pickle' # save to here '/share/kuleshov/jy928/slahmr/outputs/logs/images-val/2023-11-06/Camera0-all-shot-0-1-50'
             with open(pickle_file_path, 'wb') as handle:
                 pickle.dump(data_to_store_stitched, handle, protocol=pickle.HIGHEST_PROTOCOL)
                 print("Stitched Data saved to pickle file")
-
 
         return rt_pairs_tensor, matching_obs_data, b_stitched 
 

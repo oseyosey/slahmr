@@ -68,6 +68,8 @@ class RootLossMV(StageLossMV):
             and "cameras" in pred_data
             and self.loss_weights["joints2d"] > 0.0
         ):
+            #TODO: Reimplement selection of joints2d_obs and joints2d_pred. 
+            breakpoint()
             cur_loss_mv = 0.0
             for num_view in range(num_views):
                 if num_view == 0:
@@ -76,6 +78,7 @@ class RootLossMV(StageLossMV):
                     cam_R, cam_t, cam_f, cam_center = pred_data["cameras"]
 
                     ## select the pred_data (to match with our observed_data) ##
+                    ## TODO: Not true according to our new stitching code ##
                     match_index = [index for index in range(len(observed_data['joints2d']))]
 
                     ##joints3d_op last element is somehow nan.
@@ -98,12 +101,12 @@ class RootLossMV(StageLossMV):
 
                     cam_R, cam_t = rt_pairs_tensor[num_view] ## We may need to check the dimension ([49, 3, 3]), we want ([3, 49, 3, 3]). 
 
-                    batch_size_obs_data = observed_data["joints2d"].shape[0]
+                    batch_size_obs_data = pred_data["joints3d_op"].shape[0]
                     cam_R = cam_R.repeat(batch_size_obs_data, 1, 1, 1) ##TODO: Solved. Adapt to Batch size
                     cam_t = cam_t.repeat(batch_size_obs_data, 1, 1)
 
                     _, _, cam_f, cam_center = pred_data["cameras"]
-                    joints2d = cam_util.reproject(
+                    joints2d = cam_util.reproject( #BUG. Nov13.  einsum(): subscript b has size 6 for operand 1 which does not broadcast with previously seen size 5
                         pred_data["joints3d_op"], 
                         cam_R, cam_t, 
                         cam_f, cam_center

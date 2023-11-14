@@ -37,7 +37,7 @@ def launch_phalp(gpus, seq, img_dir, res_dir, overwrite=False):
     return subprocess.call(cmd, shell=True)
 
 
-def launch_crossview(gpus, seq, img_dir_source, res_dir, res_dir_cross_view, overwrite=False):
+def launch_crossview(gpus, seq, img_dir_source, res_dir, res_dir_cross_view, num_views, overwrite=False, duration=24):
     """
     run GAROT CrossView using GPU pool
     """
@@ -66,6 +66,8 @@ def launch_crossview(gpus, seq, img_dir_source, res_dir, res_dir_cross_view, ove
         "video.extract_video=False",
         "render.enable=True", ## enable PHALP
         "GAROT.multi_view=True",
+        f"GAROT.num_view={num_views}",
+        f"GAROT.duration={duration}", 
     ]
 
     cmd = " ".join(cmd_args)
@@ -78,6 +80,7 @@ def process_seq_crossview(gpus,
     out_root,
     seq,
     img_dir_source,
+    num_views,
     out_name="phalp_out",
     track_name="track_preds",
     shot_name="shot_idcs",
@@ -93,7 +96,7 @@ def process_seq_crossview(gpus,
     os.makedirs(res_root_cv, exist_ok=True)
     # res_dir = os.path.join(res_root, "results")
     # res_path = f"{res_root}/{name}.pkl"
-    res = launch_crossview(gpus, seq, img_dir_source, res_root, res_root_cv, overwrite)
+    res = launch_crossview(gpus, seq, img_dir_source, res_root, res_root_cv, num_views, overwrite)
     assert res == 0, "Cross view Completed"
     
     # return path directory of cross_view file

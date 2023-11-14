@@ -330,6 +330,7 @@ class StageOptimizerMV(object):
 
     def optim_step(self, obs_data_multi, writer=None):
         def closure():
+            breakpoint()
             self.optim.zero_grad()
             loss, stats_dict, preds = self.forward_pass(obs_data_multi) ## Here it's calling the def forward_pass() function in RootOptimizerMV / SMPLOptimizer / MotionOptimizer
             stats_dict["total"] = loss

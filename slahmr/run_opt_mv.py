@@ -132,7 +132,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     )
     
     ## Initialize base_model with SLAHMR+4D Human results | Multi-view ##
-    rt_pairs_tensor, matching_obs_data, B_stitch = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init) 
+    rt_pairs_tensor, matching_obs_data, B_stitch = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init)  
     base_model.to(device)
 
     # save initial results for later visualization
@@ -157,7 +157,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
                 bg_paths=dataset_multi[view_num].sel_img_paths,
                 fps=cfg.fps,
             )
-            breakpoint()
+            #breakpoint()
             vis_multi.append(vis)
         else:
             vis_multi = None
@@ -410,7 +410,7 @@ def main(cfg: DictConfig):
         phalp_file_path = f"{out_dir_muli[num_view]}/complete_track_data.pkl"
         if not os.path.exists(phalp_file_path):
             with open(phalp_file_path, "wb") as f:
-                #dataset.load_data()
+                dataset.load_data()
                 pickle.dump(dataset.data_dict, f)
             print("SAVED COMPLETE TRACK INFO")
         else:
@@ -435,6 +435,8 @@ def main(cfg: DictConfig):
     cv_data_path = f"{cfg_multi[0].data.sources.crossview}/cross_view/cross_view_matching_all_frames_data.pickle"
     if not os.path.exists(cv_data_path):
         cv_data_path = check_cross_view(cfg)
+        cv_data_path = f"cv_data_path/cross_view_matching_all_frames_data.pickle"
+        
 
     ## Run SLAHMR optimization for view 1 ##
     device = get_device(0)
@@ -458,7 +460,7 @@ def main(cfg: DictConfig):
     slahmr_data_init_dict = {k: torch.from_numpy(v) for k, v in slahmr_data_init_dict.items()}
     slahmr_data_init_dict = move_to(slahmr_data_init_dict, device)
 
-    # breakpoint()
+    breakpoint()
 
     ### Second-stage: Multi-view Optimization ###
     # 1. Run multi-view optimziation 
