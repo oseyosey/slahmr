@@ -85,6 +85,7 @@ def process_seq_crossview(gpus,
     track_name="track_preds",
     shot_name="shot_idcs",
     overwrite=False,
+    duration = 24
 ):
     """
     Run and export cross_view results
@@ -96,7 +97,7 @@ def process_seq_crossview(gpus,
     os.makedirs(res_root_cv, exist_ok=True)
     # res_dir = os.path.join(res_root, "results")
     # res_path = f"{res_root}/{name}.pkl"
-    res = launch_crossview(gpus, seq, img_dir_source, res_root, res_root_cv, num_views, overwrite)
+    res = launch_crossview(gpus, seq, img_dir_source, res_root, res_root_cv, num_views, overwrite, duration)
     assert res == 0, "Cross view Completed"
     
     # return path directory of cross_view file

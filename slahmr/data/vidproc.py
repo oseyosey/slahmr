@@ -20,7 +20,7 @@ def preprocess_frames(img_dir, src_path, overwrite=False, **kwargs):
     out = video_to_frames(src_path, img_dir, overwrite=overwrite, **kwargs)
     assert out == 0, "FAILED FRAME EXTRACTION"
 
-def preprocess_crossview(img_dir, track_dir, shot_dir, num_views, overwrite=False):
+def preprocess_crossview(img_dir, track_dir, shot_dir, num_views, overwrite=False, duration=24):
     """
     :param img_dir, img_dir is the path to the multiview images, img_dir/Camera0, img_dir/Camera1
     :param track_dir, expected format: res_root/track_name/sequence
@@ -49,6 +49,7 @@ def preprocess_crossview(img_dir, track_dir, shot_dir, num_views, overwrite=Fals
         track_name=track_name,
         shot_name=shot_name,
         overwrite=overwrite,
+        duration=duration,
     )
 
     return cv_data_path

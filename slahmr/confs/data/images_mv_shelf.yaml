@@ -29,3 +29,4 @@ sources:
 
 multi_view: True
 multi_view_num: 5
+cv_duration: 72

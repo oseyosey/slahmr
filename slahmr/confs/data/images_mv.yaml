@@ -25,7 +25,9 @@ sources:
   tracks: ${data.root}/slahmr/phalp_out/track_preds/${data.seq}
   shots: ${data.root}/slahmr/phalp_out/shot_idcs/${data.seq}.json
   crossview: ${data.root}/slahmr/phalp_out
-## GAROT Implemenation
 
+
+## GAROT Implemenation
 multi_view: True
 multi_view_num: 2
+cv_duration: 48

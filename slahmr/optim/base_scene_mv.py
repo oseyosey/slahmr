@@ -105,7 +105,7 @@ class BaseSceneModelMV(nn.Module):
         self.pairing_info = pairing_info
         self.path_body_model = path_body_model
 
-    def initialize(self, obs_data_list, cam_data, slahmr_data_init, debug=False):
+    def initialize(self, obs_data_list, cam_data, slahmr_data_init, debug=True):
         """
         Intializating Multi-view people in the world
         obs_data_list: list of observed data in data loader format
@@ -234,21 +234,30 @@ class BaseSceneModelMV(nn.Module):
 
             # Create a dictionary with the variables as keys
             data_to_store = {
-                "init_pose_latent_list": init_pose_latent_list,  
-                "init_pose_list": init_pose_list,          
-                "init_betas_list": init_betas_list,        
-                "init_trans_list": init_trans_list,        
-                "init_rot_list": init_rot_list,         
+                #"init_pose_latent_list": init_pose_latent_list,  
+                #"init_pose_list": init_pose_list,          
+                #"init_betas_list": init_betas_list,        
+                #"init_trans_list": init_trans_list,        
+                #"init_rot_list": init_rot_list,         
                 "pred_smpl_data_list": pred_smpl_data_list,   
-                "obs_data_list": obs_data_list, 
-                "init_appe_list": init_appe_list       
+                #"obs_data_list": obs_data_list, 
+                # "init_appe_list": init_appe_list       
             }
             # Path to store the pickle file
-            pickle_file_path = 'stich_world_data.pickle' # save to here '/share/kuleshov/jy928/slahmr/outputs/logs/images-val/2023-11-06/Camera0-all-shot-0-1-50'
+            pickle_file_path = 'stich_world_data_smpl.pickle' # save to here '/share/kuleshov/jy928/slahmr/outputs/logs/images-val/2023-11-06/Camera0-all-shot-0-1-50'
             with open(pickle_file_path, 'wb') as handle:
                 pickle.dump(data_to_store, handle, protocol=pickle.HIGHEST_PROTOCOL)
                 print("Stitch Data Init saved to pickle file")
-            breakpoint()
+
+            # * For Debugging SHELF (5 camera) Purposes #
+            # del init_pose_latent_list[1]
+            # del init_betas_list[1]
+            # del init_trans_list[1]
+            # del init_rot_list[1]
+            # del pred_smpl_data_list[1]
+            # del obs_data_list[1]
+            # del init_appe_list[1]
+            # self.view_nums = 4
 
         
         ### Obtain world smpl parameters from multi-view smpl parameters through stitching ###
@@ -256,6 +265,7 @@ class BaseSceneModelMV(nn.Module):
                                                                                                                                    init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list, obs_data_list, device)
 
         #TODO: init_trans_world, init_rot_world, init_rot_world last subject [4] is all 0s, check why.  Solved! Edge cases when num element is = 1
+        breakpoint()
 
 
 
@@ -301,7 +311,7 @@ class BaseSceneModelMV(nn.Module):
 
 
 
-    def stitch_world_tracklet(self, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list, obs_data_list, device):
+    def stitch_world_tracklet(self, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list, obs_data_list, device, debug=False):
         """
         Stitch tracklets from each view (already transformed from camera to world) into one global tracklet in the world frame
 
@@ -323,94 +333,135 @@ class BaseSceneModelMV(nn.Module):
 
         # Initialize 2D list with the first view
         view_init = 0
-        pose_latent_2D_list, betas_2D_list, trans_2D_list, rot_2D_list  = self.initialize_2D_smpl_param_lists(init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, view_init=view_init)
+        pose_latent_2D_list, betas_2D_list, trans_2D_list, rot_2D_list  = self.initialize_2D_smpl_param_lists(init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list)
         
 
         # Initialize a dictionary to store the pairing information for each view
         pairing_info_all_views = {}
 
-        for t_ in range(self.seq_len):
-            for view in range(1, self.view_nums): 
-                selected_tracks, selected_tracks_indices, has_first_appearance = self.select_first_appearance(init_rot_list, view, t_)
+        for t_ in range(0, self.seq_len-1):
+            for view in range(0, self.view_nums): 
+                selected_tracks, selected_tracks_indices, has_first_appearance = self.select_first_appearance(obs_data_list, view, t_) ##TODO! 
                 if has_first_appearance:
-                    # match selected tracklet with world tracklet (SLAHMR Results)
-                    set_counter = Counter() # for voting
-                    for look_foward in range(0, 25): # look forward 24 frames
-                        if t_+look_foward < self.seq_len:
-                            ## Select SMPL prediction data in world frame (6890, 3)
-                            selected_tracks_smpl_3d_points = pred_smpl_data_list[view]['points3d'][selected_tracks_indices][:,t_+look_foward, :, :]
-                            matched_subjects, unmatched_subjects, matched_indices_pair, unmatched_indices_world, unmatched_indices_camera  = self.match_subjects_3d_points_appe(pred_smpl_data_list[0]['points3d'][:,t_+look_foward, :, :].cpu().detach().numpy(), 
-                                                                                                                                                                       selected_tracks_smpl_3d_points.cpu().detach().numpy(),
-                                                                                                                                                                       init_appe_list[0][:,t_+look_foward, :].cpu().detach().numpy(),
-                                                                                                                                                                       init_appe_list[view][selected_tracks_indices][:,t_+look_foward, :].cpu().detach().numpy())
+                    # If First Appearance; initialize the track #
+                    if (not pose_latent_2D_list) and (not betas_2D_list) and (not trans_2D_list) and (not rot_2D_list):
+                        pose_latent_2D_list = [[init_pose_latent] for init_pose_latent in init_pose_latent_list[view][selected_tracks_indices]]
+                        betas_2D_list = [[init_betas] for init_betas in init_betas_list[view][selected_tracks_indices]]
+                        trans_2D_list = [[init_trans] for init_trans in init_trans_list[view][selected_tracks_indices]]
+                        rot_2D_list = [[init_rot] for init_rot in init_rot_list[view][selected_tracks_indices]]
+                    else:
+                    # Match selected tracklet with world tracklet (SLAHMR Results) #
+                        set_counter = Counter() # for voting
 
-                            # Map the matched and unmatched indices back to pred_smpl_data_list[view]
-                            # Replace camera_index with camera_index_global in matched_indices_pair
-                            matched_indices_pair_orig = [(world_index, selected_tracks_indices[camera_index]) for world_index, camera_index in matched_indices_pair]
+                        # * adaptively generate points3d #
+                        b_stitch = len(pose_latent_2D_list) # number of sequences to optimize
+                        body_model_stitch, fit_gender = load_smpl_body_model(self.path_body_model, b_stitch * self.seq_len, device=device)
+                        init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world = self.merge_2D_smpl_param_lists(pose_latent_2D_list, betas_2D_list, trans_2D_list, rot_2D_list)
+                        stitch_smpl_data = self.pred_smpl_adapt(init_trans_world, init_rot_world, self.latent2pose(init_pose_latent_world), init_betas_world, body_model_stitch)
 
-                            unmatched_indices_camera_orig = [selected_tracks_indices[camera_index] for camera_index in unmatched_indices_camera ]
+                        look_back = -24
+                        look_forward = 24
+                        for look_foward in range(look_back, look_forward): # look forward 24 frames
+                            offset = 0
+                            if t_+look_foward < 0:
+                                offset = -look_back
 
-                            # Combine matched_indices_pair_orig and unmatched_indices_camera_orig
-                            combined_set = set(matched_indices_pair_orig + [(index,) for index in unmatched_indices_camera_orig])
+                            if t_+look_foward < self.seq_len:
+                                ## Select SMPL prediction data in world frame (6890, 3)
+                                #selected_tracks_smpl_3d_points = pred_smpl_data_list[view]['points3d'][selected_tracks_indices][:,t_+look_foward, :, :] #! We shouldn't select any tracks here to perform matching, because it will cut the real match
+                                matched_subjects, unmatched_subjects, matched_indices_pair, unmatched_indices_world, unmatched_indices_camera  = self.match_subjects_3d_points_appe(stitch_smpl_data['points3d'][:,t_+look_foward+offset, :, :].cpu().detach().numpy(), # TODO: we want to use the most current 3D points 3d instead of SLAHMR results
+                                                                                                                                                                        pred_smpl_data_list[view]['points3d'][:,t_+look_foward+offset, :, :].cpu().detach().numpy(), 
+                                                                                                                                                                        init_appe_list[0 ][:,t_+look_foward+offset, :].cpu().detach().numpy(),
+                                                                                                                                                                        init_appe_list[view][:,t_+look_foward+offset, :].cpu().detach().numpy())
+                                if debug:
+                                    print(f"Frame {t_}: unmatched_indices_world at view {view}", unmatched_indices_world)
+                                    print(f"Frame {t_}: unmatched_indices_camera at view {view}", unmatched_indices_camera)
 
-                            # Convert the set to a frozenset and count it
-                            set_counter[frozenset(combined_set)] += 1
+                                # Map the matched and unmatched indices back to pred_smpl_data_list[view]
+                                # Replace camera_index with camera_index_global in matched_indices_pair
+                                ## TODO: New way of matching, it will only select matchings if the matched indices are in the selected_tracks_indices (first appearance)
+                                matched_indices_pair_orig = []
+                                for world_index, camera_index in matched_indices_pair:
+                                    if camera_index in selected_tracks_indices:
+                                        matched_indices_pair_orig.append((world_index, camera_index))
+                                # [(world_index, selected_tracks_indices[camera_index]) for world_index, camera_index in matched_indices_pair]
 
-                    # Get the most common set
-                    most_common_set = set_counter.most_common(1)[0][0]
-
-                    # Convert the most common frozenset back to a set
-                    most_common_set = set(most_common_set)
-
-                    # Convert the set back to matching_pairs, and unmatched_indices
-                    matched_indices_pair_orig = [pair for pair in most_common_set if len(pair) == 2]
-                    unmatched_indices_camera_orig = [pair[0] for pair in most_common_set if len(pair) == 1]
-                    
-                    # Create a dictionary to store the pairing information for this view
-                    pairing_info_per_view = {}
-
-                    # For the matching cases #
-                    # append selected_tracks_indices to the 2D list (B[i, i+1], T, D)
-                    for match_pairs in matched_indices_pair_orig:
-                        world_index, camera_index = match_pairs
-                        # Get the corresponding latent pose, betas, root translation, and root orientation 
-                        pose_latent_2D_list[world_index].append(init_pose_latent_list[view][camera_index])
-                        betas_2D_list[world_index].append(init_betas_list[view][camera_index])
-                        trans_2D_list[world_index].append(init_trans_list[view][camera_index])
-                        rot_2D_list[world_index].append(init_rot_list[view][camera_index])
-
-                        first_appearance = t_
-                        last_apperance = self.find_last_apperance(init_rot_list[view][camera_index])
-
-                        pairing_info_per_view[world_index] = (camera_index, first_appearance, last_apperance)
-
-                    # For the unmatched cases #
-                    # Append a new list to the 2D list (B+1, T, D)
-                    for camera_index in unmatched_indices_camera_orig:
-                        pose_latent_2D_list.append([init_pose_latent_list[view][camera_index]])
-                        betas_2D_list.append([init_betas_list[view][camera_index]])
-                        trans_2D_list.append([init_trans_list[view][camera_index]])
-                        rot_2D_list.append([init_rot_list[view][camera_index]])
-
-                        world_index = len(rot_2D_list) - 1 # index starts from 0
-
-                        first_appearance = t_
-                        last_apperance = self.find_last_apperance(init_rot_list[view][camera_index])
-
-                        pairing_info_per_view[world_index] = (camera_index, first_appearance, last_apperance)
+                                unmatched_indices_camera_orig = []
+                                for camera_index in unmatched_indices_camera:
+                                    if camera_index in selected_tracks_indices:
+                                        unmatched_indices_camera_orig.append(camera_index)
+                                
+                                # unmatched_indices_camera_orig = [selected_tracks_indices[camera_index] for camera_index in unmatched_indices_camera ]
+                                if debug:
+                                    print(f"Frame {t_}: matched_indices_pair_orig at view {view}", matched_indices_pair_orig)
+                                    print(f"Frame {t_}: unmatched_indices_world_orig at view {view}", unmatched_indices_camera_orig)
 
 
-                    pairing_info_all_views[view] = pairing_info_per_view
+                                # Combine matched_indices_pair_orig and unmatched_indices_camera_orig
+                                combined_set = set(matched_indices_pair_orig + [(index,) for index in unmatched_indices_camera_orig])
+
+                                # Convert the set to a frozenset and count it
+                                set_counter[frozenset(combined_set)] += 1
+
+                        # Get the most common set
+                        most_common_set = set_counter.most_common(1)[0][0]
+
+                        # Convert the most common frozenset back to a set
+                        most_common_set = set(most_common_set)
+
+                        print(f"Frame {t_}: most_common_set at view {view}", most_common_set)
+
+                        # Convert the set back to matching_pairs, and unmatched_indices
+                        matched_indices_pair_orig = [pair for pair in most_common_set if len(pair) == 2]
+                        unmatched_indices_camera_orig = [pair[0] for pair in most_common_set if len(pair) == 1]
+                        
+                        # Create a dictionary to store the pairing information for this view
+                        pairing_info_per_view = {}
+
+                        # For the matching cases #
+                        # append selected_tracks_indices to the 2D list (B[i, i+1], T, D)
+                        for match_pairs in matched_indices_pair_orig:
+                            world_index, camera_index = match_pairs
+                            # Get the corresponding latent pose, betas, root translation, and root orientation 
+                            pose_latent_2D_list[world_index].append(init_pose_latent_list[view][camera_index])
+                            betas_2D_list[world_index].append(init_betas_list[view][camera_index])
+                            trans_2D_list[world_index].append(init_trans_list[view][camera_index])
+                            rot_2D_list[world_index].append(init_rot_list[view][camera_index])
+
+                            first_appearance = t_
+                            last_apperance = self.find_last_apperance(obs_data_list[view]['joints2d'][camera_index])
+                            if debug:
+                                print(f"Frame {t_}: first_appearance for view {view} at {camera_index}", first_appearance)
+                                print(f"Frame {t_}: last_apperance for {view} at {camera_index}", last_apperance)
+
+                            pairing_info_per_view[world_index] = (camera_index, first_appearance, last_apperance)
+
+                        # For the unmatched cases #
+                        # Append a new list to the 2D list (B+1, T, D)
+                        for camera_index in unmatched_indices_camera_orig:
+                            pose_latent_2D_list.append([init_pose_latent_list[view][camera_index]])
+                            betas_2D_list.append([init_betas_list[view][camera_index]])
+                            trans_2D_list.append([init_trans_list[view][camera_index]])
+                            rot_2D_list.append([init_rot_list[view][camera_index]])
+
+                            world_index = len(rot_2D_list) - 1 # index starts from 0
+
+                            first_appearance = t_
+                            last_apperance = self.find_last_apperance(obs_data_list[view]['joints2d'][camera_index])
+
+                            pairing_info_per_view[world_index] = (camera_index, first_appearance, last_apperance)
 
 
-            # transform (combining / averaging of information) the 2D list to updated SMPL paramters in the world frame (using weighted average, possibly confidence score)
-            # (Update the world tracklet pose parameteres with the corresponding latent pose, betas, root translation, and root orientation)
-            init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world = self.merge_2D_smpl_param_lists(pose_latent_2D_list, betas_2D_list, trans_2D_list, rot_2D_list)
+                        pairing_info_all_views[view] = pairing_info_per_view
 
-            # Update the pairing information into Base Scene Model
-            self.update_pairing_info(pairing_info_all_views)
+        # transform (combining / averaging of information) the 2D list to updated SMPL paramters in the world frame (using weighted average, possibly confidence score)
+        # (Update the world tracklet pose parameteres with the corresponding latent pose, betas, root translation, and root orientation)
+        init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world = self.merge_2D_smpl_param_lists(pose_latent_2D_list, betas_2D_list, trans_2D_list, rot_2D_list)
 
-            return init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world, pairing_info_all_views
+        # Update the pairing information into Base Scene Model
+        self.update_pairing_info(pairing_info_all_views)
+
+        return init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world, pairing_info_all_views
 
 
 
@@ -502,8 +553,9 @@ class BaseSceneModelMV(nn.Module):
         selected_appe_array_camera = np.array(selected_appe_list_camera)
 
         # Normalize the 3D SMPL coordinates
-        pred_smpl_data_array = normalize_smpl_features(pred_smpl_data_array)
-        selected_tracks_array = normalize_smpl_features(selected_tracks_array)
+        ## ! We don't need to normalize the 3D SMPL coordinates because they are already normalized in the SMPL model! ##
+        # pred_smpl_data_array = normalize_smpl_features(pred_smpl_data_array)
+        # selected_tracks_array = normalize_smpl_features(selected_tracks_array)
 
         # Normalize the appearance embeddings
         init_appe_array_world = normalize_appearance_embeddings(init_appe_array_world)
@@ -515,10 +567,12 @@ class BaseSceneModelMV(nn.Module):
         for i in range(len(pred_smpl_data_array)):
             for j in range(len(selected_tracks_array)):
                 cost_3d = compute_cost_l2(pred_smpl_data_array[i], selected_tracks_array[j])
-                cost_appe = compute_cost_appearance_euclidean(init_appe_array_world[i], selected_appe_array_camera[j])
+                # * Ditch Appearance Matching for now # 
+                #cost_appe = compute_cost_appearance_euclidean(init_appe_array_world[i], selected_appe_array_camera[j])
                 
                 # Combine the costs using the provided weights
-                combined_cost = weight_3d * cost_3d + weight_appearance * cost_appe
+                #combined_cost = weight_3d * cost_3d + weight_appearance * cost_appe
+                combined_cost = weight_3d * cost_3d
                 cost_matrix_combined[i, j] = combined_cost
 
         # Hungarian algorithm for optimal assignment
@@ -538,26 +592,35 @@ class BaseSceneModelMV(nn.Module):
 
     def initialize_2D_smpl_param_lists(self, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, view_init=0):
         # Initialize the 2D lists with the first view's data
-        pose_latent_2D_list = [[init_pose_latent] for init_pose_latent in init_pose_latent_list[view_init]]
-        betas_2D_list = [[init_betas] for init_betas in init_betas_list[view_init]]
-        trans_2D_list = [[init_trans] for init_trans in init_trans_list[view_init]]
-        rot_2D_list = [[init_rot] for init_rot in init_rot_list[view_init]]
+        # pose_latent_2D_list = [[init_pose_latent] for init_pose_latent in init_pose_latent_list[view_init]]
+        # betas_2D_list = [[init_betas] for init_betas in init_betas_list[view_init]]
+        # trans_2D_list = [[init_trans] for init_trans in init_trans_list[view_init]]
+        # rot_2D_list = [[init_rot] for init_rot in init_rot_list[view_init]]
+
+
+        pose_latent_2D_list = []
+        betas_2D_list = []
+        trans_2D_list = []
+        rot_2D_list = []
+
 
         return pose_latent_2D_list, betas_2D_list, trans_2D_list, rot_2D_list
 
 
-    def select_first_appearance(self, init_rot_list, view_num, t_):
+    ## TODO: Fixed. Cannot use init_rot_list, instead use obs_data. 
+    def select_first_appearance(self, obs_data_list, view_num, t_):
         """
         Input:
-        init_rot_list: list of root orientation in the camera frame
+        obs_data_list: list of observation data
         view_num: the view number
         t_: the current frame
 
         Output:
         selected_tracks: list of selected tracks (can turn into numpy)
         """
+
         # Access the specific view
-        view = init_rot_list[view_num]
+        view = obs_data_list[view_num]['joints2d']
 
         # Initialize a list to store the selected tracks
         selected_tracks = []
@@ -567,14 +630,11 @@ class BaseSceneModelMV(nn.Module):
         has_first_appearance = False
 
         # Iterate over the tracks
-        index = 0
-        for track in view:
+        for index, track in enumerate(view):
             # Check if the current frame is the first non-zero frame
-            if (np.all(track[:t_].to('cpu').numpy() == 0) and np.all(track[t_].to('cpu').numpy() != 0)):
-                view_num += 1
+            if (np.all(track[:t_].to('cpu').numpy() == 0) or (t_== 0) ) and (np.any(track[:t_+1].to('cpu').numpy() != 0) ): ##TODO: Fix 
                 selected_tracks.append(track)
                 selected_tracks_indices.append(index)
-                index += 1
                 has_first_appearance = True
 
         # Convert the list of selected tracks to a numpy array
@@ -583,16 +643,16 @@ class BaseSceneModelMV(nn.Module):
         return selected_tracks, selected_tracks_indices, has_first_appearance
 
 
-    def find_last_apperance(self, init_rot):
+    def find_last_apperance(self, obs_data):
         """
         Input:
-        init_rot: root orientation in the camera frame
+        obs_data: root orientation in the camera frame
 
         Output:
         t_: last apperance frame 
         """
         for t_ in range(self.seq_len-1):
-            if np.all(init_rot[t_].to('cpu').numpy() != 0) and np.all(init_rot[t_+1].to('cpu').numpy() == 0):
+            if np.any(obs_data[t_].to('cpu').numpy() != 0) and np.all(obs_data[t_+1].to('cpu').numpy() == 0):
                 return t_
             elif t_+1 == self.seq_len-1:
                 return t_+1
@@ -722,6 +782,44 @@ class BaseSceneModelMV(nn.Module):
             body_model = self.body_model
         else:
             body_model = self.body_model_multi[num_view]
+
+        smpl_out = run_smpl(body_model, trans, root_orient, body_pose, betas)
+        joints3d, points3d = smpl_out["joints"], smpl_out["vertices"]
+
+        # select desired joints and vertices
+        joints3d_body = joints3d[:, :, : len(SMPL_JOINTS), :]
+        joints3d_op = joints3d[:, :, self.smpl2op_map, :]
+        # hacky way to get hip joints that align with ViTPose keypoints
+        # this could be moved elsewhere in the future (and done properly)
+        joints3d_op[:, :, [9, 12]] = (
+            joints3d_op[:, :, [9, 12]]
+            + 0.25 * (joints3d_op[:, :, [9, 12]] - joints3d_op[:, :, [12, 9]])
+            + 0.5
+            * (
+                joints3d_op[:, :, [8]]
+                - 0.5 * (joints3d_op[:, :, [9, 12]] + joints3d_op[:, :, [12, 9]])
+            )
+        )
+        verts3d = points3d[:, :, KEYPT_VERTS, :]
+
+        return {
+            "points3d": points3d,  # all vertices
+            "verts3d": verts3d,  # keypoint vertices
+            "joints3d": joints3d_body,  # smpl joints
+            "joints3d_op": joints3d_op,  # OP joints
+            "faces": smpl_out["faces"],  # index array of faces
+        }
+
+    def pred_smpl_adapt(self, trans, root_orient, body_pose, betas, body_model):
+        """
+        Forward pass of the SMPL model and populates pred_data accordingly with
+        joints3d, verts3d, points3d.
+
+        trans : B x T x 3
+        root_orient : B x T x 3
+        body_pose : B x T x J*3
+        betas : B x D
+        """
 
         smpl_out = run_smpl(body_model, trans, root_orient, body_pose, betas)
         joints3d, points3d = smpl_out["joints"], smpl_out["vertices"]
