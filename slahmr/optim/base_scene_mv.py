@@ -105,7 +105,7 @@ class BaseSceneModelMV(nn.Module):
         self.pairing_info = pairing_info
         self.path_body_model = path_body_model
 
-    def initialize(self, obs_data_list, cam_data, slahmr_data_init, debug=True):
+    def initialize(self, obs_data_list, cam_data, slahmr_data_init, debug=False):
         """
         Intializating Multi-view people in the world
         obs_data_list: list of observed data in data loader format
@@ -264,8 +264,9 @@ class BaseSceneModelMV(nn.Module):
         init_pose_latent_world, init_betas_world, init_trans_world, init_rot_world, matching_obs_data = self.stitch_world_tracklet(init_pose_latent_list, init_betas_list, 
                                                                                                                                    init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list, obs_data_list, device)
 
-        #TODO: init_trans_world, init_rot_world, init_rot_world last subject [4] is all 0s, check why.  Solved! Edge cases when num element is = 1
-        breakpoint()
+        #TODO (Solved): init_trans_world, init_rot_world, init_rot_world last subject [4] is all 0s, check why.  Edge cases when num element is = 1
+        if debug:
+            breakpoint()
 
 
 
@@ -349,6 +350,15 @@ class BaseSceneModelMV(nn.Module):
                         betas_2D_list = [[init_betas] for init_betas in init_betas_list[view][selected_tracks_indices]]
                         trans_2D_list = [[init_trans] for init_trans in init_trans_list[view][selected_tracks_indices]]
                         rot_2D_list = [[init_rot] for init_rot in init_rot_list[view][selected_tracks_indices]]
+
+                        pairing_info_per_view = {} # * Create a dictionary to store the pairing information for this view #
+                        for world_index in range(0, len(selected_tracks_indices)):
+                            camera_index = selected_tracks_indices[world_index]
+                            first_appearance = t_
+                            last_apperance = self.find_last_apperance(obs_data_list[view]['joints2d'][camera_index])
+                            pairing_info_per_view[world_index] = [(camera_index, first_appearance, last_apperance)]
+                            pairing_info_all_views[view] = pairing_info_per_view
+
                     else:
                     # Match selected tracklet with world tracklet (SLAHMR Results) #
                         set_counter = Counter() # for voting
@@ -414,9 +424,7 @@ class BaseSceneModelMV(nn.Module):
                         # Convert the set back to matching_pairs, and unmatched_indices
                         matched_indices_pair_orig = [pair for pair in most_common_set if len(pair) == 2]
                         unmatched_indices_camera_orig = [pair[0] for pair in most_common_set if len(pair) == 1]
-                        
-                        # Create a dictionary to store the pairing information for this view
-                        pairing_info_per_view = {}
+
 
                         # For the matching cases #
                         # append selected_tracks_indices to the 2D list (B[i, i+1], T, D)
@@ -434,7 +442,15 @@ class BaseSceneModelMV(nn.Module):
                                 print(f"Frame {t_}: first_appearance for view {view} at {camera_index}", first_appearance)
                                 print(f"Frame {t_}: last_apperance for {view} at {camera_index}", last_apperance)
 
-                            pairing_info_per_view[world_index] = (camera_index, first_appearance, last_apperance)
+                            if view in pairing_info_all_views.keys():
+                                if world_index in pairing_info_all_views[view].keys():
+                                    pairing_info_all_views[view][world_index].append((camera_index, first_appearance, last_apperance))
+                                else:
+                                    pairing_info_all_views[view][world_index] = [(camera_index, first_appearance, last_apperance)]
+                            else:
+                                pairing_info_all_views[view] = {}
+                                pairing_info_all_views[view][world_index] = [(camera_index, first_appearance, last_apperance)]
+
 
                         # For the unmatched cases #
                         # Append a new list to the 2D list (B+1, T, D)
@@ -449,10 +465,15 @@ class BaseSceneModelMV(nn.Module):
                             first_appearance = t_
                             last_apperance = self.find_last_apperance(obs_data_list[view]['joints2d'][camera_index])
 
-                            pairing_info_per_view[world_index] = (camera_index, first_appearance, last_apperance)
+                            if view in pairing_info_all_views.keys():
+                                if world_index in pairing_info_all_views[view].keys():
+                                    pairing_info_all_views[view][world_index].append((camera_index, first_appearance, last_apperance))
+                                else:
+                                    pairing_info_all_views[view][world_index] = [(camera_index, first_appearance, last_apperance)]
+                            else:
+                                pairing_info_all_views[view] = {}
+                                pairing_info_all_views[view][world_index] = [(camera_index, first_appearance, last_apperance)]
 
-
-                        pairing_info_all_views[view] = pairing_info_per_view
 
         # transform (combining / averaging of information) the 2D list to updated SMPL paramters in the world frame (using weighted average, possibly confidence score)
         # (Update the world tracklet pose parameteres with the corresponding latent pose, betas, root translation, and root orientation)

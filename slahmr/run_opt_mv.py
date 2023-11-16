@@ -145,8 +145,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
 
 
     opts = cfg.optim.options
-    opts["vis_every"] = 10
-    vis_scale = 0.25
+    vis_scale = 0.5
     vis_multi = [] # vis_multi is a list of vis for each view
     for view_num in range(cfg.data.multi_view_num):
         if opts.vis_every > 0:
@@ -435,7 +434,7 @@ def main(cfg: DictConfig):
     cv_data_path = f"{cfg_multi[0].data.sources.crossview}/cross_view/cross_view_matching_all_frames_data.pickle"
     if not os.path.exists(cv_data_path):
         cv_data_path = check_cross_view(cfg)
-        cv_data_path = f"cv_data_path/cross_view_matching_all_frames_data.pickle"
+        cv_data_path = f"cross_view/cross_view_matching_all_frames_data.pickle"
         
 
     ## Run SLAHMR optimization for view 1 ##

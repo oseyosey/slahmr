@@ -186,25 +186,50 @@ class StageOptimizerMV(object):
         ##TODO We want to detect which view a and change res["cam_R"][0], res["cam_t"][0] to the corresponding view RT.
         cam_R, cam_t = self.rt_pairs_tensor[num_view]
 
-        batch_size_obs_data = obs_data['joints2d'].shape[0]
-        cam_R_stacked = cam_R.repeat(batch_size_obs_data, 1, 1, 1) ## Bug Fixed
-        cam_t_stacked = cam_t.repeat(batch_size_obs_data, 1, 1) ## Bug Fixed
-        res_dict['cam_R'] = cam_R_stacked
-        res_dict['cam_t'] = cam_t_stacked
+
+        # ? we shoulnd't follow batch size of obs data #
+        # batch_size_obs_data = obs_data['joints2d'].shape[0]
+        # cam_R_stacked = cam_R.repeat(batch_size_obs_data, 1, 1, 1) ## Bug Fixed
+        # cam_t_stacked = cam_t.repeat(batch_size_obs_data, 1, 1) ## Bug Fixed
+        # res_dict['cam_R'] = cam_R_stacked
+        # res_dict['cam_t'] = cam_t_stacked
 
 
         ## TODO Here IndexError: The shape of the mask [4] at index 0 does not match the shape of the indexed tensor [5, 6890, 3] at index 0
-        ## TODO: we probably want to have a stitched obs_data? 
+        ## TODO: we probably want to have a stitched obs_data?
+        # breakpoint()
+
+        ## * Recreating vis_mask and track_id ##
+        batch_world = res_dict['trans'].shape[0]
+        length_world = res_dict['trans'].shape[1]
+
+        vis_mask_world = torch.ones((batch_world, length_world)).to(device=obs_data['joints2d'].device)
+        track_id_world = torch.arange(1,batch_world+1).to(device=obs_data['joints2d'].device)
+
+        # scene_dict = move_to(
+        #     prep_result_vis(
+        #         res_dict,
+        #         obs_data["vis_mask"],
+        #         obs_data["track_id"],
+        #         self.model.body_model,
+        #     ),
+        #     "cpu",
+        # )
+
         scene_dict = move_to(
             prep_result_vis(
                 res_dict,
-                obs_data["vis_mask"],
-                obs_data["track_id"],
-                self.model.body_model,
+                vis_mask_world,
+                track_id_world,
+                self.model.body_model, #? I think here model.body_model is already being updated with latest batch size
             ),
             "cpu",
         )
-        animate_scene(vis, scene_dict, res_pre, render_views=["src_cam", "above"])
+
+        # * Consider having a seq name for every view # 
+        ## seq_name as paramter in animate_scene.
+
+        animate_scene(vis, scene_dict, res_pre, render_views=["src_cam", "above", "front", "side"])
 
     def log_losses(self, stats_dict):
         stats_dict = move_to(detach_all(stats_dict), "cpu")
@@ -285,7 +310,7 @@ class StageOptimizerMV(object):
             if (i + 1) % self.vis_every == 0:  # render
                 # visualize for every view
                 for num_view in range(self.num_views):
-                    breakpoint()
+                    #breakpoint()
                     self.vis_result(res_dir_init, obs_data_multi[num_view], num_view, vis=vis_multi[num_view])
 
             self.cur_step = i
@@ -325,12 +350,10 @@ class StageOptimizerMV(object):
         self.save_checkpoint(out_dir_init)
         self.save_results(res_dir_init, seq_name)
         for num_view in range(self.num_views):
-            breakpoint()
             self.vis_result(res_dir_init, obs_data_multi[num_view], num_view, vis=vis_multi[num_view])
 
     def optim_step(self, obs_data_multi, writer=None):
         def closure():
-            breakpoint()
             self.optim.zero_grad()
             loss, stats_dict, preds = self.forward_pass(obs_data_multi) ## Here it's calling the def forward_pass() function in RootOptimizerMV / SMPLOptimizer / MotionOptimizer
             stats_dict["total"] = loss

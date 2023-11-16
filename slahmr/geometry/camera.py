@@ -46,7 +46,7 @@ def reproject(points3d, cam_R, cam_t, cam_f, cam_center):
     :param cam_center (T, 2)
     """
     B, T, N, _ = points3d.shape
-    points3d = torch.einsum("xtij,btnj->btni", cam_R, points3d) #points3d = torch.einsum("btij,btnj->btni", cam_R, points3d), b changed to a dummy variable.
+    points3d = torch.einsum("btij,btnj->btni", cam_R, points3d) #points3d = torch.einsum("btij,btnj->btni", cam_R, points3d), b changed to a dummy variable.
     points3d = points3d + cam_t[..., None, :]  # (B, T, N, 3)
     points2d = points3d[..., :2] / points3d[..., 2:3]
     points2d = cam_f[None, :, None] * points2d + cam_center[None, :, None]
