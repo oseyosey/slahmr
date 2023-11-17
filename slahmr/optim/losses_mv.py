@@ -76,13 +76,12 @@ class RootLossMV(StageLossMV):
 
                     cam_R, cam_t, cam_f, cam_center = pred_data["cameras"]
 
-                    ##joints3d_op last element is somehow nan.
                     pred_joints2d = cam_util.reproject(
                         pred_data["joints3d_op"], *pred_data["cameras"] ##TODO: adapt to multi-view
+                        ## joints3d_op last element is somehow nan.
                         )
 
-
-                    ## select the pred_data (to match with our observed_data) ##
+                    ##*  select the pred_data (to match with our observed_data) ##
                     device = observed_data["joints2d"].get_device()
                     pred_joints2d_select = torch.empty(observed_data['joints2d'].size()[:-1] + (2,)).to(device)
                     matching_obs_data_per_view = matching_obs_data[num_view]
@@ -105,12 +104,12 @@ class RootLossMV(StageLossMV):
 
                     cam_R, cam_t = rt_pairs_tensor[num_view] ## We may need to check the dimension ([49, 3, 3]), we want ([3, 49, 3, 3]). 
 
-                    batch_size_obs_data = pred_data["joints3d_op"].shape[0]
-                    cam_R = cam_R.repeat(batch_size_obs_data, 1, 1, 1) ##TODO: Solved. Adapt to Batch size
-                    cam_t = cam_t.repeat(batch_size_obs_data, 1, 1)
+                    batch_size_world = pred_data["joints3d_op"].shape[0]
+                    cam_R = cam_R.repeat(batch_size_world, 1, 1, 1) ##TODO (Solved): Adapt to Batch size
+                    cam_t = cam_t.repeat(batch_size_world, 1, 1)
 
                     _, _, cam_f, cam_center = pred_data["cameras"]
-                    pred_joints2d = cam_util.reproject( #BUG. Nov13.  einsum(): subscript b has size 6 for operand 1 which does not broadcast with previously seen size 5
+                    pred_joints2d = cam_util.reproject( #BUG (Solved). Nov13: einsum(): subscript b has size 6 for operand 1 which does not broadcast with previously seen size 5
                         pred_data["joints3d_op"], 
                         cam_R, cam_t, 
                         cam_f, cam_center
@@ -118,6 +117,7 @@ class RootLossMV(StageLossMV):
 
                     device = observed_data["joints2d"].get_device()
                     pred_joints2d_select = torch.empty(observed_data['joints2d'].size()[:-1] + (2,)).to(device) # * the last dimension should be 2 instead of 3. 
+                                                                                                                # * observed_data['joints2d'].size() is used to dermine batch size of the observed data
 
                     ## * Addressed the problem of world_stitch_data having more or less batch size than observed_data. ##
                     for world_index, camera_data_list in matching_obs_data_per_view.items():
@@ -161,7 +161,7 @@ class RootLossMV(StageLossMV):
 
                 device = pred_data["joints3d"].device
                 pred_joints3d_select = pred_joints3d_select.to(device)
-                cur_loss = joints3d_smooth_loss(pred_joints3d_select, valid_mask) #TODO
+                cur_loss = joints3d_smooth_loss(pred_joints3d_select, valid_mask) 
                 cur_loss_mv += cur_loss
             loss += self.loss_weights["joints3d_smooth"] * cur_loss_mv
             stats_dict["joints3d_smooth"] = cur_loss_mv
@@ -217,10 +217,23 @@ class SMPLLossMV(RootLossMV):
         if "latent_pose" in pred_data and self.loss_weights["pose_prior"] > 0.0:
             cur_loss_mv = 0.0
             for num_view in range(num_views):
+                observed_data = observed_data_list[num_view]
+                # * Select latent pose corresponding to the observed data# 
+                batch_size_obs = observed_data["joints2d"].shape[0] 
+                device = observed_data["joints2d"].get_device()
+                pred_latent_pose_select = torch.empty(batch_size_obs, *pred_data["latent_pose"].shape[1:]).to(device)
+
+                matching_obs_data_per_view = matching_obs_data[num_view]
+                for world_index, camera_data_list in matching_obs_data_per_view.items():
+                    for camera_data in camera_data_list:
+                        camera_index, first_appe_t, last_appe_t = camera_data
+                        pred_latent_pose_select[camera_index, first_appe_t:last_appe_t+1] = pred_data["latent_pose"][world_index, first_appe_t:last_appe_t+1]
+                
                 if valid_mask_multi is not None:
-                    cur_loss = pose_prior_loss(pred_data["latent_pose"], valid_mask_multi[num_view])
+                    cur_loss = pose_prior_loss(pred_latent_pose_select, valid_mask_multi[num_view])
                 else:
-                    cur_loss = pose_prior_loss(pred_data["latent_pose"])
+                    cur_loss = pose_prior_loss(pred_latent_pose_select)
+                    # ? Should i put a break, cur_loss will be added for a total number of view
                 cur_loss_mv += cur_loss
 
             loss += self.loss_weights["pose_prior"] * cur_loss_mv
@@ -274,10 +287,12 @@ class MotionLossMV(SMPLLossMV):
         """
         cam_pred_data["latent_pose"] = pred_data["latent_pose"]
         loss, stats_dict = super().forward(
-            observed_data_list, pred_data, nsteps, matching_obs_data, rt_pairs_tensor, num_views, valid_mask_multi
+            observed_data_list, pred_data, nsteps, matching_obs_data, rt_pairs_tensor, num_views
         )
 
-        valid_mask = valid_mask_multi[0] #Could be none or could be a valid mask
+
+        #valid_mask = valid_mask_multi[0] #Could be none or could be a valid mask
+        valid_mask = None
         
 
         # prior to keep latent motion likely
@@ -288,10 +303,13 @@ class MotionLossMV(SMPLLossMV):
             # Helps to calibrate the range of 'good' loss values
             B, T, _ = pred_data["latent_motion"].shape
             device = pred_data["latent_motion"].device
-            async_mask = (
-                torch.arange(T, device=device)[None].expand(B, -1)
-                < valid_mask.sum(dim=1)[:, None]
-            )
+            if valid_mask is not None:
+                async_mask = (
+                    torch.arange(T, device=device)[None].expand(B, -1)
+                    < valid_mask.sum(dim=1)[:, None]
+                )
+            else:
+                async_mask = None
             cur_loss = motion_prior_loss(
                 pred_data["latent_motion"],
                 cond_prior=pred_data.get("cond_prior", None),

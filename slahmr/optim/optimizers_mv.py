@@ -173,6 +173,8 @@ class StageOptimizerMV(object):
         if vis is None or self.vis_every < 0:
             return
 
+
+        # breakpoint()
         # check which results are saved
         seq_name = obs_data["seq_name"][0]
         res_pre = f"{res_dir}/{seq_name}_opt_{self.cur_step:06d}"
@@ -191,8 +193,14 @@ class StageOptimizerMV(object):
         # batch_size_obs_data = obs_data['joints2d'].shape[0]
         # cam_R_stacked = cam_R.repeat(batch_size_obs_data, 1, 1, 1) ## Bug Fixed
         # cam_t_stacked = cam_t.repeat(batch_size_obs_data, 1, 1) ## Bug Fixed
-        # res_dict['cam_R'] = cam_R_stacked
-        # res_dict['cam_t'] = cam_t_stacked
+
+        ## * Here the cam_R and cam_t applies the pred world to perform world-2-camera ##
+        if num_view != 0:
+            batch_world = res_dict['trans'].shape[0]
+            cam_R_stacked = cam_R.repeat(batch_world, 1, 1, 1) 
+            cam_t_stacked = cam_t.repeat(batch_world, 1, 1) 
+            res_dict['cam_R'] = cam_R_stacked
+            res_dict['cam_t'] = cam_t_stacked
 
 
         ## TODO Here IndexError: The shape of the mask [4] at index 0 does not match the shape of the indexed tensor [5, 6890, 3] at index 0
@@ -307,7 +315,7 @@ class StageOptimizerMV(object):
             else:
                 self.save_checkpoint(out_dir_init)
 
-            if (i + 1) % self.vis_every == 0:  # render
+            if ((i + 1) % self.vis_every == 0) or (i == 0):  # * render as well as render before init.
                 # visualize for every view
                 for num_view in range(self.num_views):
                     #breakpoint()
@@ -354,6 +362,8 @@ class StageOptimizerMV(object):
 
     def optim_step(self, obs_data_multi, writer=None):
         def closure():
+            ##TODO: Figure out why it crashes during motion optimization
+            # breakpoint()
             self.optim.zero_grad()
             loss, stats_dict, preds = self.forward_pass(obs_data_multi) ## Here it's calling the def forward_pass() function in RootOptimizerMV / SMPLOptimizer / MotionOptimizer
             stats_dict["total"] = loss
@@ -524,7 +534,7 @@ class SmoothOptimizerMV(StageOptimizerMV):
         # Use current params to go through SMPL and get joints3d, verts3d, points3d
         pred_data = self.model.pred_params_smpl()
         pred_data["cameras"] = self.model.params.get_cameras()
-        pred_data.update(self.model.params.get_vars())
+        pred_data.update(self.model.params.get_vars()) ## ? inserts the output of get_vars(), a dictionary, into the pred_data dictionary
 
         ## This is originally being commented out
         # camera predictions 
@@ -572,7 +582,7 @@ class MotionOptimizerMV(StageOptimizerMV):
             param_names += ["delta_cam_R", "cam_f"] ## if opt_cams, ["delta_cam_R", "cam_f"] will be improved.
 
         #super().__init__(self.name, model, param_names, **kwargs)
-        super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs)
+        super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs) 
         self.set_loss(model, all_loss_weights[self.stage], **kwargs)
 
     def set_loss(
@@ -620,16 +630,17 @@ class MotionOptimizerMV(StageOptimizerMV):
         world_preds["cameras"] = p.get_cameras(np.arange(T))
 
 
-        ##TODO: figure if it's indeed the case. 
+        ##TODO Update: Not true. Will be different from vis_mask from obs_data_list
         track_mask_multi = []
         for num_view in range(self.num_views):
-            track_mask_multi.append(track_mask)
+            track_mask_multi.append(track_mask) #! Problem! 
 
-         
-        if self.opt_cams: ##GAROT will not optimize camera?
+    
+        if self.opt_cams: ## ? GAROT will not optimize camera?
             cam_R, cam_t = p.get_extrinsics()
             world_preds["cam_R"], world_preds["cam_t"] = cam_R[:T], cam_t[:T]
 
+        # ? why do we need to slice the obs_data_list? 
         obs_data_list_sliced = []
         for obs_data in obs_data_list:
             obs_data_sliced = slice_dict(obs_data, 0, T)
@@ -644,7 +655,7 @@ class MotionOptimizerMV(StageOptimizerMV):
             self.matching_obs_data,
             self.rt_pairs_tensor,
             self.num_views,
-            valid_mask_multi=track_mask_multi,
+            valid_mask_multi=track_mask_multi, #* Currently unused
             init_motion_scale=motion_scale,
         )
         return loss, stats_dict, (preds, world_preds)

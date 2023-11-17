@@ -128,11 +128,14 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     ## All poses are in their own INDEPENDENT camera reference frames.
     ## But if images are static, then poses should be in the same camera refernce frames. 
     base_model = BaseSceneModelMV(
-        B_INIT, T, body_model_multi, pose_prior, fit_gender=fit_gender, rt_pairs=rt_pairs, view_nums=cfg.data.multi_view_num, path_body_model = paths.smpl, **margs
+        B_INIT, T, body_model_multi, 
+        pose_prior, fit_gender=fit_gender, 
+        rt_pairs=rt_pairs, view_nums=cfg.data.multi_view_num,
+        path_body_model = paths.smpl, **margs
     )
     
     ## Initialize base_model with SLAHMR+4D Human results | Multi-view ##
-    rt_pairs_tensor, matching_obs_data, B_stitch = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init)  
+    rt_pairs_tensor, matching_obs_data, B_stitch, body_model_stitch = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init)  
     base_model.to(device)
 
     # save initial results for later visualization
@@ -143,9 +146,8 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
         save_input_poses(dataset, os.path.join(out_dir, "phalp"), args_per_view.seq)
         save_initial_predictions(base_model, os.path.join(out_dir, "init"), args_per_view.seq) # args_per_view.seq is called the name of the sequence e.g. Camera0
 
-
     opts = cfg.optim.options
-    vis_scale = 0.5
+    vis_scale = 0.25
     vis_multi = [] # vis_multi is a list of vis for each view
     for view_num in range(cfg.data.multi_view_num):
         if opts.vis_every > 0:
@@ -168,15 +170,18 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 1...")
     ##Set up RootOptimizerMV!  ##
-    num_iters_root_mv = 30*5 ## Chunk size * ITER
+    args = cfg.optim.root
+    num_iters_root_mv = args.num_iters*10## Chunk size * ITER
     optim = RootOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
     optim.run(obs_data_multi, num_iters_root_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
 
     breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 2...")
+    args = cfg.optim.smooth
     optim = SMPLOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
-    optim.run(obs_data_multi, num_iters_root_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
+    num_iters_smooth_mv = args.num_iters*10
+    optim.run(obs_data_multi, num_iters_smooth_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
     args = cfg.optim.smooth
     optim = SmoothOptimizerMV(
@@ -210,11 +215,17 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
         rt_pairs_tensor=rt_pairs_tensor,
         view_nums=cfg.data.multi_view_num,
         pairing_info=matching_obs_data,
+        body_model_stitch=body_model_stitch,
+        path_body_model=paths.smpl,
         **margs,
     ).to(device)
 
+    # * Extracting floor plane from SLAHMR *
+    obs_data_multi = extract_ground_plane(cfg, obs_data_multi, slahmr_data_init)
+
     # initialize motion model with base model predictions
-    base_params = base_model.params.get_dict() #TODO: figure out what base_params are
+    base_params = base_model.params.get_dict() #* dict_keys(['latent_pose', 'betas', 'root_orient', 'trans']). 
+                                            #* up until now the dimension looks lokay.
     model.initialize(obs_data_multi, cam_data, base_params, cfg.fps) ##GAROT Implementation
     model.to(device)
 
@@ -226,6 +237,18 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
         optim.run(obs_data_multi, optim.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
     return 
+
+
+def extract_ground_plane(cfg, obs_data_multi, slahmr_data_init):
+    """
+    Extract ground plane from SLAHMR
+    """
+    for view_num in range(cfg.data.multi_view_num):     
+        import copy    
+        floorplane_est = copy.deepcopy(slahmr_data_init["floor_plane"])
+        #? not sure if we want to apply floor plane to every view* or just the first view ?#
+        obs_data_multi[view_num]["floor_plane"][:] = floorplane_est.expand_as(obs_data_multi[view_num]["floor_plane"])
+    return obs_data_multi
 
 
 

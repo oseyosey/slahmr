@@ -64,6 +64,7 @@ class BaseSceneModelMV(nn.Module):
         view_nums=0, # number of views
         pairing_info =None,
         path_body_model = None,
+        body_model_stitch = None,
         **kwargs,
     ):
         super().__init__()
@@ -72,7 +73,13 @@ class BaseSceneModelMV(nn.Module):
         self.seq_len = seq_len
 
         self.body_model_multi = body_model_multi
-        self.body_model = body_model_multi[0] # Requires update_batch to be called before initialize
+        
+        ## * Address Motion Prior Issue ##
+        if body_model_stitch is None:
+            self.body_model = body_model_multi[0] # Requires update_batch to be called before initialize
+        else:
+            self.body_model = body_model_stitch
+
         self.fit_gender = fit_gender
 
         self.pose_prior = pose_prior
@@ -104,6 +111,7 @@ class BaseSceneModelMV(nn.Module):
         self.rt_pairs_tensor = rt_pairs_tensor
         self.pairing_info = pairing_info
         self.path_body_model = path_body_model
+
 
     def initialize(self, obs_data_list, cam_data, slahmr_data_init, debug=False):
         """
@@ -269,7 +277,6 @@ class BaseSceneModelMV(nn.Module):
             breakpoint()
 
 
-
         self.params.set_param("latent_pose", init_pose_latent_world) ## pose in the world frame
         self.params.set_param("betas", init_betas_world) ## beta in the world frame
         self.params.set_param("trans", init_trans_world) ## root translation in the world frame
@@ -308,7 +315,7 @@ class BaseSceneModelMV(nn.Module):
                 pickle.dump(data_to_store_stitched, handle, protocol=pickle.HIGHEST_PROTOCOL)
                 print("Stitched Data saved to pickle file")
 
-        return rt_pairs_tensor, matching_obs_data, b_stitched 
+        return rt_pairs_tensor, matching_obs_data, b_stitched, body_model_stitch
 
 
 

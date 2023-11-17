@@ -37,7 +37,7 @@ def launch_phalp(gpus, seq, img_dir, res_dir, overwrite=False):
     return subprocess.call(cmd, shell=True)
 
 
-def launch_crossview(gpus, seq, img_dir_source, res_dir, res_dir_cross_view, num_views, overwrite=False, duration=24):
+def launch_crossview(gpus, seq, img_dir_source, res_dir, res_dir_cross_view, num_views, overwrite=False, duration=72):
     """
     run GAROT CrossView using GPU pool
     """
@@ -85,7 +85,7 @@ def process_seq_crossview(gpus,
     track_name="track_preds",
     shot_name="shot_idcs",
     overwrite=False,
-    duration = 24
+    duration = 72,
 ):
     """
     Run and export cross_view results

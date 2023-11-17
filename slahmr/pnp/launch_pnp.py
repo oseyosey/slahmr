@@ -44,8 +44,8 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device)
     smpl_data_world = transform_smpl_paramas(data_dict_slahmr_world, device)
     joints_3d_data_all_frames = []
 
-
-    for j in range(frame):
+    frame_slahmr = smpl_data_world['joints3d_op'].shape[1]
+    for j in range(min(frame, frame_slahmr)):
         joints_3d_data_per_frame = []
         for i in range(smpl_data_world['joints3d_op'].shape[0]):
             joints_3d_data_per_frame.append(smpl_data_world['joints3d_op'][i][j].cpu().detach().numpy())
@@ -60,7 +60,7 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device)
         track_data = get_4D_human_data(keypoints_2d_path) # List of length B, each contain (T, 25, 3).
         track_data_mv.append(track_data)
         joints_2d_data_all_frames = [] # List of length T, [subject 1, 2, 3 at time 0; subject 1, 2, 3 at time 1; ... ]
-        for j in range(frame):
+        for j in range(min(frame, frame_slahmr)):
             joints_2d_data_all_frames_subjects = []
             for i in range(len(track_data['joints2d'])):
                 joints_2d_subject = track_data['joints2d'][i][j][..., :2]
@@ -88,7 +88,7 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device)
         points_3D_world = []
         points_2D_camera = []
         # breakpoint()
-        for t_ in range(frame):
+        for t_ in range(min(frame, frame_slahmr)):
             ## Obtain BBoox from 2D keypoitns at camera coordiante
             joints_2d_data = joints_2d_data_mv[num_view-1][t_] ## num_view - 1 because we didn't store view 0 (world camera)
             joints_2d_detected_camera = np.array(joints_2d_data)

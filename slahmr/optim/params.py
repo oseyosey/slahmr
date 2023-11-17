@@ -127,6 +127,8 @@ class CameraParams(Params):
     def intrins(self):  # (4,)
         return torch.cat([self.cam_f[0], self.cam_center[0]], dim=-1).detach().cpu()
 
+
+    # * GAROT: get_extrinsics() essentially add cam_r with dR to obtain the new cam_R #
     def get_extrinsics(self):
         """
         returns (T, 3, 3), (T, 3)

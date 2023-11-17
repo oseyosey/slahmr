@@ -69,6 +69,8 @@ class MovingSceneModelMV(BaseSceneModelMV):
         view_nums=0,
         pairing_info=None,
         rt_pairs_tensor=None,
+        body_model_stitch=None,
+        path_body_model=None,
         **kwargs,
     ):
         super().__init__(
@@ -83,6 +85,10 @@ class MovingSceneModelMV(BaseSceneModelMV):
             cam_graph=cam_graph,
             rt_pairs=rt_pairs,
             view_nums=view_nums,
+            body_model_stitch=body_model_stitch,
+            rt_pairs_tensor=rt_pairs_tensor,
+            pairing_info=pairing_info,
+            path_body_model=path_body_model
         )
         assert motion_prior is not None
         assert motion_prior.model_data_config in [
