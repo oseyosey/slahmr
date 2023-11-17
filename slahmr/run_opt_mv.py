@@ -128,14 +128,22 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     ## All poses are in their own INDEPENDENT camera reference frames.
     ## But if images are static, then poses should be in the same camera refernce frames. 
     base_model = BaseSceneModelMV(
-        B_INIT, T, body_model_multi, 
-        pose_prior, fit_gender=fit_gender, 
-        rt_pairs=rt_pairs, view_nums=cfg.data.multi_view_num,
-        path_body_model = paths.smpl, **margs
-    )
+                                B_INIT, 
+                                T, 
+                                body_model_multi, 
+                                pose_prior, 
+                                fit_gender=fit_gender, 
+                                rt_pairs=rt_pairs, 
+                                view_nums=cfg.data.multi_view_num,
+                                path_body_model=paths.smpl,
+                                **margs
+                                )
+
+    ## Initialized Multi-view Cameras ##
+    rt_pairs_tensor = convert_rt_pairs(cfg, cam_data, rt_pairs, T, device)
     
     ## Initialize base_model with SLAHMR+4D Human results | Multi-view ##
-    rt_pairs_tensor, matching_obs_data, B_stitch, body_model_stitch = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init)  
+    _, matching_obs_data, B_stitch, body_model_stitch = base_model.initialize(obs_data_multi, cam_data, slahmr_data_init, rt_pairs_tensor)  
     base_model.to(device)
 
     # save initial results for later visualization
@@ -147,7 +155,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
         save_initial_predictions(base_model, os.path.join(out_dir, "init"), args_per_view.seq) # args_per_view.seq is called the name of the sequence e.g. Camera0
 
     opts = cfg.optim.options
-    vis_scale = 0.25
+    vis_scale = 0.75
     vis_multi = [] # vis_multi is a list of vis for each view
     for view_num in range(cfg.data.multi_view_num):
         if opts.vis_every > 0:
@@ -166,6 +174,8 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
 
     writer = SummaryWriter(out_dir_multi[0])
 
+    # * Extracting floor plane from SLAHMR *
+    obs_data_multi = extract_ground_plane(cfg, obs_data_multi, slahmr_data_init)
 
     breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 1...")
@@ -220,13 +230,12 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
         **margs,
     ).to(device)
 
-    # * Extracting floor plane from SLAHMR *
-    obs_data_multi = extract_ground_plane(cfg, obs_data_multi, slahmr_data_init)
 
     # initialize motion model with base model predictions
     base_params = base_model.params.get_dict() #* dict_keys(['latent_pose', 'betas', 'root_orient', 'trans']). 
                                             #* up until now the dimension looks lokay.
-    model.initialize(obs_data_multi, cam_data, base_params, cfg.fps) ##GAROT Implementation
+                                    
+    model.initialize(obs_data_multi, cam_data, rt_pairs_tensor, base_params, cfg.fps) ##GAROT Implementation
     model.to(device)
 
 
@@ -239,6 +248,30 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     return 
 
 
+
+def convert_rt_pairs(cfg, rt_init, rt_pairs, T, device):
+    """
+    Convert rt_pairs to list of tensors
+    """
+    rt_pairs_tensor = []
+    for num_view in range(0, cfg.data.multi_view_num):
+        # transform into world frame (T, 3, 3), (T, 3)
+        if num_view == 0: # world frame
+            R_w2c, t_w2c = rt_init["cam_R"], rt_init["cam_t"]
+        else: # camera frame, require multi-view rt pairs,
+            R_w2c_vec, t_w2c = rt_pairs[num_view]
+            t_w2c = torch.from_numpy(t_w2c).to(device)
+            R_w2c = cv2.Rodrigues(R_w2c_vec)[0]
+            R_w2c =  torch.from_numpy(R_w2c).to(device)
+
+            t_w2c = t_w2c.squeeze().repeat(T, 1).float()
+            R_w2c = R_w2c.unsqueeze(0).repeat(T, 1, 1).float()
+
+        rt_pairs_tensor.append((R_w2c, t_w2c))
+
+    return rt_pairs_tensor
+
+
 def extract_ground_plane(cfg, obs_data_multi, slahmr_data_init):
     """
     Extract ground plane from SLAHMR
@@ -249,8 +282,6 @@ def extract_ground_plane(cfg, obs_data_multi, slahmr_data_init):
         #? not sure if we want to apply floor plane to every view* or just the first view ?#
         obs_data_multi[view_num]["floor_plane"][:] = floorplane_est.expand_as(obs_data_multi[view_num]["floor_plane"])
     return obs_data_multi
-
-
 
 ### Original SLAHMR Implementation ###
 def run_opt(cfg, dataset, out_dir, device):
@@ -457,7 +488,7 @@ def main(cfg: DictConfig):
     cv_data_path = f"{cfg_multi[0].data.sources.crossview}/cross_view/cross_view_matching_all_frames_data.pickle"
     if not os.path.exists(cv_data_path):
         cv_data_path = check_cross_view(cfg)
-        cv_data_path = f"cross_view/cross_view_matching_all_frames_data.pickle"
+        cv_data_path = f"{cfg_multi[0].data.sources.crossview}/cross_view/cross_view_matching_all_frames_data.pickle"
         
 
     ## Run SLAHMR optimization for view 1 ##

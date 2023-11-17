@@ -6,7 +6,7 @@ optim:
     lr: 1.0
     lbfgs_max_iter: 20
     save_every: 20
-    vis_every: 20 #for debug purposes
+    vis_every: -1 #for debug purposes
     max_chunk_steps: 20
     save_meshes: False
 

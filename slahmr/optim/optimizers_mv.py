@@ -12,7 +12,7 @@ from body_model import OP_IGNORE_JOINTS
 from geometry.mesh import save_mesh_scenes
 from util.logger import Logger, log_cur_stats
 from util.tensor import move_to, detach_all
-from vis.output import prep_result_vis, animate_scene
+from vis.output import animate_scene, prep_result_vis_mv
 
 from .losses_mv import RootLossMV, SMPLLossMV, MotionLossMV
 from .output import save_camera_json
@@ -110,7 +110,7 @@ class StageOptimizerMV(object):
 
     def save_checkpoint(self, out_dir):
         param_path = os.path.join(out_dir, f"{self.name}_params.pth")
-        param_dict = self.model.params.get_dict()
+        param_dict = self.model.params.get_dict() #* Paramteres who is being called set_param will be added to Set (including Focal length, Camera, Rotation)
         if "world_scale" in param_dict:
             print("WORLD_SCALE", param_dict["world_scale"].detach().cpu())
         if "floor_plane" in param_dict:
@@ -149,12 +149,20 @@ class StageOptimizerMV(object):
         with torch.no_grad():
             cam_R, cam_t = self.model.params.get_extrinsics()
             intrins = self.model.params.get_intrinsics()
+
         save_camera_json(
             f"{out_dir}/{seq_name}_cameras_{self.cur_step:06d}.json",
             cam_R.detach().cpu(),
             cam_t.detach().cpu(),
             intrins.detach().cpu(),
         )
+
+        ## TODO: Also save the mv camera
+        with torch.no_grad():
+            cam_Rt_mv = self.model.params.get_extrinsics_mv()
+            intrins_mv = self.model.params.get_intrinsics_mv()
+        
+        #save_camera_mv_json(
 
         # plot losses
         self.plot_losses(out_dir)
@@ -173,7 +181,6 @@ class StageOptimizerMV(object):
         if vis is None or self.vis_every < 0:
             return
 
-
         # breakpoint()
         # check which results are saved
         seq_name = obs_data["seq_name"][0]
@@ -184,34 +191,14 @@ class StageOptimizerMV(object):
 
         res_dict = detach_all(pred_dict["world"])
 
-        ##TODO (res["cam_R"][0], res["cam_t"][0]))
-        ##TODO We want to detect which view a and change res["cam_R"][0], res["cam_t"][0] to the corresponding view RT.
-        cam_R, cam_t = self.rt_pairs_tensor[num_view]
 
-
-        # ? we shoulnd't follow batch size of obs data #
-        # batch_size_obs_data = obs_data['joints2d'].shape[0]
-        # cam_R_stacked = cam_R.repeat(batch_size_obs_data, 1, 1, 1) ## Bug Fixed
-        # cam_t_stacked = cam_t.repeat(batch_size_obs_data, 1, 1) ## Bug Fixed
-
-        ## * Here the cam_R and cam_t applies the pred world to perform world-2-camera ##
-        if num_view != 0:
-            batch_world = res_dict['trans'].shape[0]
-            cam_R_stacked = cam_R.repeat(batch_world, 1, 1, 1) 
-            cam_t_stacked = cam_t.repeat(batch_world, 1, 1) 
-            res_dict['cam_R'] = cam_R_stacked
-            res_dict['cam_t'] = cam_t_stacked
-
-
-        ## TODO Here IndexError: The shape of the mask [4] at index 0 does not match the shape of the indexed tensor [5, 6890, 3] at index 0
-        ## TODO: we probably want to have a stitched obs_data?
         # breakpoint()
 
         ## * Recreating vis_mask and track_id ##
         batch_world = res_dict['trans'].shape[0]
         length_world = res_dict['trans'].shape[1]
 
-        vis_mask_world = torch.ones((batch_world, length_world)).to(device=obs_data['joints2d'].device)
+        vis_mask_world = torch.ones((batch_world, length_world)).to(device=obs_data['joints2d'].device) # Render all joints2d in the world
         track_id_world = torch.arange(1,batch_world+1).to(device=obs_data['joints2d'].device)
 
         # scene_dict = move_to(
@@ -225,11 +212,13 @@ class StageOptimizerMV(object):
         # )
 
         scene_dict = move_to(
-            prep_result_vis(
+            prep_result_vis_mv(
                 res_dict,
                 vis_mask_world,
                 track_id_world,
                 self.model.body_model, #? I think here model.body_model is already being updated with latest batch size
+                num_view,
+                floor_plane=obs_data["floor_plane"][0],
             ),
             "cpu",
         )
@@ -315,7 +304,7 @@ class StageOptimizerMV(object):
             else:
                 self.save_checkpoint(out_dir_init)
 
-            if ((i + 1) % self.vis_every == 0) or (i == 0):  # * render as well as render before init.
+            if ((i + 1) % self.vis_every == 0):  # * render as well as render before init.
                 # visualize for every view
                 for num_view in range(self.num_views):
                     #breakpoint()
@@ -362,7 +351,6 @@ class StageOptimizerMV(object):
 
     def optim_step(self, obs_data_multi, writer=None):
         def closure():
-            ##TODO: Figure out why it crashes during motion optimization
             # breakpoint()
             self.optim.zero_grad()
             loss, stats_dict, preds = self.forward_pass(obs_data_multi) ## Here it's calling the def forward_pass() function in RootOptimizerMV / SMPLOptimizer / MotionOptimizer
@@ -402,10 +390,18 @@ class RootOptimizerMV(StageOptimizerMV):
     ):
         ## optimize global orientation and root translation in the world frame
         param_names = ["trans", "root_orient"]
+        #* Optimize also the focal length (and maybe camera translation)
+        if model.opt_cams_mv:
+            Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS ROTATION AND TRANSLATION")
+            for i in range(1, num_views):
+                param_names += [f"cam_R_{i}", f"cam_t_{i}"]
+        if model.opt_focal_mv:
+            Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS FOCAL LENGTH")
+            for i in range(1, num_views):
+                param_names += [f"cam_f_{i}"]
+
         super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs)
 
-        ## TODO Here they defined the root loss (what we need to change for multi-view!)
-        ## TODO know if robust_loss_type = None (meaning they didn't use the points3D_loss)
         self.loss = RootLossMV(
             all_loss_weights[self.stage],
             ignore_op_joints=OP_IGNORE_JOINTS,
@@ -414,7 +410,6 @@ class RootOptimizerMV(StageOptimizerMV):
             robust_loss=robust_loss_type,
             robust_tuning_const=robust_tuning_const,
         )  # Here it's calling the def setup_losses() function
-
 
         ## Matching obs data is a ditcionary of dictionary that stores the matching between pred data and obs data. 
             # self.matching_obs_data = matching_obs_data
@@ -427,6 +422,9 @@ class RootOptimizerMV(StageOptimizerMV):
         # Use current params to go through SMPL and get joints3d, verts3d, points3d
         pred_data = self.model.pred_params_smpl()
         pred_data["cameras"] = self.model.params.get_cameras()
+        
+        #* Multi-view camera and focal Optimization *#
+        pred_data["cameras_multi_mv"] = self.model.params.get_cameras_mv()
 
         # compute data losses only
         vis_mask_multi = []
@@ -460,6 +458,14 @@ class SMPLOptimizerMV(StageOptimizerMV):
         param_names = ["trans", "root_orient", "betas", "latent_pose"]
         if model.opt_scale:
             param_names += ["world_scale"]
+        if model.opt_cams_mv:
+            Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS ROTATION AND TRANSLATION")
+            for i in range(1, num_views):
+                param_names += [f"cam_R_{i}", f"cam_t_{i}"]
+        if model.opt_focal_mv:
+            Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS FOCAL LENGTH")
+            for i in range(1, num_views):
+                param_names += [f"cam_f_{i}"]
 
         super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs)
 
@@ -479,7 +485,10 @@ class SMPLOptimizerMV(StageOptimizerMV):
         # Use current params to go through SMPL and get joints3d, verts3d, points3d
         pred_data = self.model.pred_params_smpl()
         pred_data["cameras"] = self.model.params.get_cameras()
+        pred_data["cameras_multi_mv"] = self.model.params.get_cameras_mv()
+
         pred_data.update(self.model.params.get_vars())
+
 
         # compute data losses only
         vis_mask_multi = []
@@ -534,6 +543,7 @@ class SmoothOptimizerMV(StageOptimizerMV):
         # Use current params to go through SMPL and get joints3d, verts3d, points3d
         pred_data = self.model.pred_params_smpl()
         pred_data["cameras"] = self.model.params.get_cameras()
+        pred_data["cameras_multi_mv"] = self.model.params.get_cameras_mv()
         pred_data.update(self.model.params.get_vars()) ## ? inserts the output of get_vars(), a dictionary, into the pred_data dictionary
 
         ## This is originally being commented out

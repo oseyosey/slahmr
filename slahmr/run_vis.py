@@ -28,7 +28,7 @@ def run_vis(
     out_dir,
     dev_id,
     phases=["motion_chunks"],
-    render_views=["src_cam", "above", "side"],
+    render_views=["src_cam", "above", "side", "front"], #["src_cam", "above", "front", "side"])
     make_grid=False,
     overwrite=False,
     save_dir=None,
@@ -177,6 +177,7 @@ def render_results(cfg, dataset, dev_id, res_dicts, out_names, **kwargs):
         fps=cfg.fps,
     )
 
+    breakpoint()
     save_paths_all = []
     for res_dict, out_name in zip(res_dicts, out_names):
         res_dict = move_to(res_dict, device)
@@ -185,6 +186,7 @@ def render_results(cfg, dataset, dev_id, res_dicts, out_names, **kwargs):
             obs_data["vis_mask"],
             obs_data["track_id"],
             body_model,
+            floor_plane = None #obs_data["floor_plane"][0]
         )
         print(kwargs)
         save_paths = animate_scene(

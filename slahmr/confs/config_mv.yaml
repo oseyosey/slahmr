@@ -1,6 +1,6 @@
 defaults:
   - data: posetrack
-  - optim
+  # - optim
   - optim_mv ## Here optimization weights for mv
   - _self_
 
@@ -24,6 +24,7 @@ vis:
     - src_cam
     - above
     - side
+    - front
   make_grid: True
   overwrite: False
 

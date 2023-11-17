@@ -24,6 +24,7 @@ vis:
     - src_cam
     - above
     - side
+    - front
   make_grid: True
   overwrite: False
 

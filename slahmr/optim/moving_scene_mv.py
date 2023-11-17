@@ -88,7 +88,10 @@ class MovingSceneModelMV(BaseSceneModelMV):
             body_model_stitch=body_model_stitch,
             rt_pairs_tensor=rt_pairs_tensor,
             pairing_info=pairing_info,
-            path_body_model=path_body_model
+            path_body_model=path_body_model,
+            opt_scale_mv=False,
+            opt_cams_mv=True,
+            opt_focal_mv=True,
         )
         assert motion_prior is not None
         assert motion_prior.model_data_config in [
@@ -114,17 +117,23 @@ class MovingSceneModelMV(BaseSceneModelMV):
         print("FLOOR TYPE", floor_type)
         self.est_floor = est_floor
 
+        #* Camera and Focal length update #
+        print("OPT MULTI-VIEW Scale", self.opt_scale_mv)
+        print("OPT MULTI-VIEW FOCAL", self.opt_cams_mv)
+        print("OPT MULTI-VIEW CAMERAS", self.opt_focal_mv)
+
     @property
     def is_motion_active(self):
         return hasattr(self.params, "latent_motion")
 
-    def initialize(self, obs_data_list, cam_data, param_dict, data_fps):
+    def initialize(self, obs_data_list, cam_data, rt_pairs_tensor, param_dict, data_fps):
         """
         we need to also optimize for floor and world scale
         obs_data_list: list of observed data in data loader format
         """
         Logger.log("Initializing moving scene model with observed data")
 
+        ## 
         self.params.set_cameras(
             cam_data,
             opt_scale=self.opt_scale,
@@ -132,6 +141,18 @@ class MovingSceneModelMV(BaseSceneModelMV):
             opt_focal=self.opt_cams,
             **param_dict,
         )
+
+        #* initialize multi-view cameras
+        self.params.set_cameras_mv(
+            cam_data,
+            rt_pairs_tensor,
+            self.view_nums,
+            opt_scale_mv=self.opt_scale_mv,
+            opt_cams_mv=self.opt_cams_mv,
+            opt_focal_mv=self.opt_focal_mv,
+        ) 
+
+
         init_view = 0 ## hardcoded for now, we might be able to init floor with multi view
         self.init_floor(obs_data_list[init_view], param_dict)
         self.init_first_state(obs_data_list[init_view], param_dict, data_fps) ## This might be a potential problem, loss of information.

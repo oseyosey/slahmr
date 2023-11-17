@@ -9,7 +9,7 @@ ext: mp4
 src_path: ${data.root}/${data.video_dir}/${data.seq}.${data.ext}
 frame_opts:
   ext: png
-  fps: 25
+  fps: 30
   start_sec: 0
   end_sec: -1
 use_cams: True
@@ -28,5 +28,5 @@ sources:
 ## GAROT Implemenation
 
 multi_view: True
-multi_view_num: 5
+multi_view_num: 2
 cv_duration: 72

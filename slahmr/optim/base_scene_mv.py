@@ -22,7 +22,7 @@ from util.loaders import (
 )
 
 from .helpers import estimate_initial_trans
-from .params import CameraParams
+from .params import CameraParamsMV
 from .multi_view_tools import *
 
 import cv2
@@ -65,6 +65,9 @@ class BaseSceneModelMV(nn.Module):
         pairing_info =None,
         path_body_model = None,
         body_model_stitch = None,
+        opt_scale_mv=False,
+        opt_cams_mv=True,
+        opt_focal_mv=True,
         **kwargs,
     ):
         super().__init__()
@@ -103,7 +106,7 @@ class BaseSceneModelMV(nn.Module):
         print("OPT SCALE", self.opt_scale)
         print("OPT CAMERAS", self.opt_cams)
 
-        self.params = CameraParams(batch_size) # Requires update_batch to be called before initialize
+        self.params = CameraParamsMV(batch_size) #*  Requires update_batch to be called before initialize
 
         self.rt_pairs = rt_pairs
         self.view_nums = view_nums
@@ -112,8 +115,16 @@ class BaseSceneModelMV(nn.Module):
         self.pairing_info = pairing_info
         self.path_body_model = path_body_model
 
+        #* Camera and Focal length update #
+        self.opt_scale_mv = opt_scale_mv
+        self.opt_cams_mv = opt_cams_mv
+        self.opt_focal_mv = opt_focal_mv
+        print("OPT MULTI-VIEW Scale", self.opt_scale_mv)
+        print("OPT MULTI-VIEW FOCAL", self.opt_cams_mv)
+        print("OPT MULTI-VIEW CAMERAS", self.opt_focal_mv)
 
-    def initialize(self, obs_data_list, cam_data, slahmr_data_init, debug=False):
+
+    def initialize(self, obs_data_list, cam_data, slahmr_data_init, rt_pairs_tensor, debug=False):
         """
         Intializating Multi-view people in the world
         obs_data_list: list of observed data in data loader format
@@ -129,9 +140,20 @@ class BaseSceneModelMV(nn.Module):
             opt_focal=self.opt_cams,
         )
 
+        #* initialize multi-view cameras
+        self.params.set_cameras_mv(
+            cam_data,
+            rt_pairs_tensor,
+            self.view_nums,
+            opt_scale_mv=self.opt_scale_mv,
+            opt_cams_mv=self.opt_cams_mv,
+            opt_focal_mv=self.opt_focal_mv,
+        )
+        
+
         ### Multi-view Set-Up ### 
         init_pose_list, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list = [], [], [], [], [], [], []
-        rt_pairs_tensor = []
+        rt_pairs_tensor = [] ##* List of (R, t) pairs for each view equivalent to cam_data["cam_R"], cam_data["cam_t"] format.
         for num_view in range(len(obs_data_list)):
             # initialize body params
             obs_data = obs_data_list[num_view]
@@ -233,8 +255,8 @@ class BaseSceneModelMV(nn.Module):
 
             init_appe_list.append(init_appe)
 
-        # Set-up rt_pairs_tensor in our BaseSceneModelMV
-        self.rt_pairs_tensor = rt_pairs_tensor
+        # Set-up rt_pairs_tensor in our BaseSceneModelMV (no longer needed)
+        # self.rt_pairs_tensor = rt_pairs_tensor
         
         if debug:
             ## 先把所有需要的东西存下来，放在Jupyter Notebook里操作
@@ -256,16 +278,6 @@ class BaseSceneModelMV(nn.Module):
             with open(pickle_file_path, 'wb') as handle:
                 pickle.dump(data_to_store, handle, protocol=pickle.HIGHEST_PROTOCOL)
                 print("Stitch Data Init saved to pickle file")
-
-            # * For Debugging SHELF (5 camera) Purposes #
-            # del init_pose_latent_list[1]
-            # del init_betas_list[1]
-            # del init_trans_list[1]
-            # del init_rot_list[1]
-            # del pred_smpl_data_list[1]
-            # del obs_data_list[1]
-            # del init_appe_list[1]
-            # self.view_nums = 4
 
         
         ### Obtain world smpl parameters from multi-view smpl parameters through stitching ###
@@ -315,7 +327,7 @@ class BaseSceneModelMV(nn.Module):
                 pickle.dump(data_to_store_stitched, handle, protocol=pickle.HIGHEST_PROTOCOL)
                 print("Stitched Data saved to pickle file")
 
-        return rt_pairs_tensor, matching_obs_data, b_stitched, body_model_stitch
+        return self.rt_pairs_tensor, matching_obs_data, b_stitched, body_model_stitch #* rt_pairs_tensor no longer needed
 
 
 
@@ -766,6 +778,16 @@ class BaseSceneModelMV(nn.Module):
         # add the cameras
         res["cam_R"], res["cam_t"], _, _ = self.params.get_cameras()
         res["intrins"] = self.params.intrins
+
+        #* add the multi-view cameras
+        cameras_multi_mv = self.params.get_cameras_mv()
+        intrins_multi_mv = self.params.intrins_mv
+        #? Cannot have cam_Rt_mv as list of tuples ##
+        for camera_index in range(1, self.params.num_view):
+            res[f"cam_R_{camera_index}"], res[f"cam_t_{camera_index}"], _, _ = cameras_multi_mv[camera_index-1]
+            res[f"cam_f_{camera_index}"] = intrins_multi_mv[camera_index-1] #* Here it's actually intrinsics  (cam_f and cam_center)
+
+            
         return {"world": res}
 
     def latent2pose(self, latent_pose):

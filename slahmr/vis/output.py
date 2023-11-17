@@ -15,7 +15,7 @@ from .fig_specs import get_seq_figure_skip, get_seq_static_lookat_points
 from .tools import smpl_to_geometry
 
 
-def prep_result_vis(res, vis_mask, track_ids, body_model):
+def prep_result_vis(res, vis_mask, track_ids, body_model, floor_plane=None):
     """
     :param res (dict) with (B, T, *) tensor elements, B tracks and T frames
     :param vis_mask (B, T) with visibility of each track in each frame
@@ -32,9 +32,47 @@ def prep_result_vis(res, vis_mask, track_ids, body_model):
             res.get("betas", None),
         )
     T_w2c = None
-    floor_plane = None
+    floor_plane = floor_plane
     if "cam_R" in res and "cam_t" in res:
         T_w2c = cam_util.make_4x4_pose(res["cam_R"][0], res["cam_t"][0])
+    if "floor_plane" in res:
+        floor_plane = res["floor_plane"][0]
+    return build_scene_dict(
+        world_smpl,
+        vis_mask,
+        track_ids,
+        T_w2c=T_w2c,
+        floor_plane=floor_plane,
+    )
+
+def prep_result_vis_mv(res, vis_mask, track_ids, body_model, num_view, floor_plane=None):
+    """
+    :param res (dict) with (B, T, *) tensor elements, B tracks and T frames
+    :param vis_mask (B, T) with visibility of each track in each frame
+    :param track_ids (B,) index of each track
+    """
+    print("RESULT FIELDS", res.keys())
+    res = detach_all(res)
+    with torch.no_grad():
+        world_smpl = run_smpl(
+            body_model,
+            res["trans"],
+            res["root_orient"],
+            res["pose_body"],
+            res.get("betas", None),
+        )
+    T_w2c = None
+    floor_plane = floor_plane
+    
+    if ("cam_R" in res and "cam_t" in res) and (num_view == 0):
+        if num_view == 0:
+            T_w2c = cam_util.make_4x4_pose(res["cam_R"][0], res["cam_t"][0])
+    
+    #* Multi-view camera pose, focal optimization *#
+    if (f"cam_R_{num_view}" in res) and (f"cam_t_{num_view}" in res):
+        if num_view != 0:
+            T_w2c = cam_util.make_4x4_pose(res[f"cam_R_{num_view}"][0], res[f"cam_t_{num_view}"][0])
+    
     if "floor_plane" in res:
         floor_plane = res["floor_plane"][0]
     return build_scene_dict(

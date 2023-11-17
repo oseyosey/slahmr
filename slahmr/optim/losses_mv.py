@@ -102,13 +102,16 @@ class RootLossMV(StageLossMV):
                     observed_data = observed_data_list[num_view]
                     matching_obs_data_per_view = matching_obs_data[num_view]
 
-                    cam_R, cam_t = rt_pairs_tensor[num_view] ## We may need to check the dimension ([49, 3, 3]), we want ([3, 49, 3, 3]). 
+                    #? HERE cam_R, cam_t, cam_f are all being optimized. ?#
+                    cam_R, cam_t, cam_f, cam_center = pred_data["cameras_multi_mv"][num_view-1]   ##* Remember pred_data["cameras_multi_mv"] only stores from view 1,...,V (excluding view 0)
+                                                                                                ## We may need to check the dimension ([49, 3, 3]), we want ([3, 49, 3, 3]). 
 
                     batch_size_world = pred_data["joints3d_op"].shape[0]
-                    cam_R = cam_R.repeat(batch_size_world, 1, 1, 1) ##TODO (Solved): Adapt to Batch size
-                    cam_t = cam_t.repeat(batch_size_world, 1, 1)
 
-                    _, _, cam_f, cam_center = pred_data["cameras"]
+                    #? I don't think we need to do that, becuase in get_cameras_mv it already calls the batch_size_world ?#
+                    # cam_R = cam_R.repeat(batch_size_world, 1, 1, 1) ##TODO (Solved): Adapt to Batch size
+                    # cam_t = cam_t.repeat(batch_size_world, 1, 1)
+
                     pred_joints2d = cam_util.reproject( #BUG (Solved). Nov13: einsum(): subscript b has size 6 for operand 1 which does not broadcast with previously seen size 5
                         pred_data["joints3d_op"], 
                         cam_R, cam_t, 

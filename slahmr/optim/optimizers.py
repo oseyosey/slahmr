@@ -182,7 +182,7 @@ class StageOptimizer(object):
             ),
             "cpu",
         )
-        animate_scene(vis, scene_dict, res_pre, render_views=["src_cam", "above"])
+        animate_scene(vis, scene_dict, res_pre, render_views=["src_cam", "above", "front", "side"])
 
     def log_losses(self, stats_dict):
         stats_dict = move_to(detach_all(stats_dict), "cpu")
