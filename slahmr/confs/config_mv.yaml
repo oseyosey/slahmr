@@ -6,7 +6,7 @@ defaults:
 
 model:
   floor_type: "shared"
-  est_floor: False #False
+  est_floor: False # True
   use_init: True
   opt_cams: False
   opt_scale: True

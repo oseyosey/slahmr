@@ -65,9 +65,9 @@ from pnp.pnp_helpers import get_highest_motion_data
 
 N_STAGES = 3
 
-#TODO
+
 ### GAROT Implementation ###
-def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cfg_multi, device):
+def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cfg_multi, device, debug=False):
     args = cfg.data
 
     ## setting up psuedo B and T (B, the number of sequences will change.)
@@ -177,7 +177,8 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     # * Extracting floor plane from SLAHMR *
     obs_data_multi = extract_ground_plane(cfg, obs_data_multi, slahmr_data_init)
 
-    breakpoint()
+    if debug:
+        breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 1...")
     ##Set up RootOptimizerMV!  ##
     args = cfg.optim.root
@@ -185,8 +186,8 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     optim = RootOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
     optim.run(obs_data_multi, num_iters_root_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
-
-    breakpoint()
+    if debug:
+        breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 2...")
     args = cfg.optim.smooth
     optim = SMPLOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
@@ -199,8 +200,8 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     )
     optim.run(obs_data_multi, args.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer) # We might want to change the number of iterations here
 
-
-    breakpoint()
+    if debug:
+        breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 3...")
     # now optimize motion model
     Logger.log(f"Loading motion prior from {paths.humor}")
@@ -513,7 +514,7 @@ def main(cfg: DictConfig):
     slahmr_data_init_dict = {k: torch.from_numpy(v) for k, v in slahmr_data_init_dict.items()}
     slahmr_data_init_dict = move_to(slahmr_data_init_dict, device)
 
-    breakpoint()
+    # breakpoint()
 
     ### Second-stage: Multi-view Optimization ###
     # 1. Run multi-view optimziation 

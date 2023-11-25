@@ -50,7 +50,7 @@ class RootLossMV(StageLossMV):
         self.joints2d_loss = Joints2DLoss(ignore_op_joints, joints2d_sigma)
         self.points3d_loss = Points3DLoss(use_chamfer, robust_loss, robust_tuning_const)
 
-    def forward(self, observed_data_list, pred_data, matching_obs_data, rt_pairs_tensor, num_views, valid_mask_multi=None):
+    def forward(self, observed_data_list, pred_data, matching_obs_data, num_views, valid_mask_multi=None):
         """
         For fitting just global root trans/orientation.
         Only computes joint/point/vert losses, i.e. no priors.
@@ -211,13 +211,13 @@ SMPLLoss setup is same as RootLoss
 
 
 class SMPLLossMV(RootLossMV):
-    def forward(self, observed_data_list, pred_data, nsteps, matching_obs_data, rt_pairs_tensor, num_views, valid_mask_multi=None):
+    def forward(self, observed_data_list, pred_data, nsteps, matching_obs_data, num_views, valid_mask_multi=None):
         """
         For fitting full shape and pose of SMPL.
         nsteps used to scale single-step losses
         """
         loss, stats_dict = super().forward(
-            observed_data_list, pred_data, matching_obs_data, rt_pairs_tensor, num_views, valid_mask_multi
+            observed_data_list, pred_data, matching_obs_data, num_views, valid_mask_multi
         )
 
         # prior to keep latent pose likely
@@ -279,7 +279,6 @@ class MotionLossMV(SMPLLossMV):
         cam_pred_data,
         nsteps,
         matching_obs_data,
-        rt_pairs_tensor,
         num_views,
         valid_mask_multi=None,
         init_motion_scale=1.0,
@@ -295,9 +294,8 @@ class MotionLossMV(SMPLLossMV):
         """
         cam_pred_data["latent_pose"] = pred_data["latent_pose"]
         loss, stats_dict = super().forward(
-            observed_data_list, pred_data, nsteps, matching_obs_data, rt_pairs_tensor, num_views
+            observed_data_list, pred_data, nsteps, matching_obs_data, num_views
         )
-
 
         #valid_mask = valid_mask_multi[0] #Could be none or could be a valid mask
         valid_mask = None
@@ -407,23 +405,20 @@ class MotionLossMV(SMPLLossMV):
             stats_dict["contact_height"] = cur_loss
 
 
-        ##TODO: FLOOR_REG WIll not be used here! (weights are sets to be 0)
         # floor is close to the initialization
         if (
             self.loss_weights["floor_reg"] > 0.0
             and "floor_plane" in pred_data
             and "floor_plane" in observed_data_list[0]
         ):
-        ##TODO figure out if we can do this for multi-view
-            cur_loss_mv = 0.0
-            for num_view in range(num_views):
-                cur_loss = floor_reg_loss(
-                    pred_data["floor_plane"], observed_data_list[num_view]["floor_plane"]
-                )
-                cur_loss_mv += cur_loss
+        ##TODO (solved) figure out if we can do this for multi-view. NO need to loop through num_views (we are simply using the first view (SLAHMR) as Ground Plane)
+            cur_loss = 0.0
+            cur_loss = floor_reg_loss(
+                    pred_data["floor_plane"], observed_data_list[0]["floor_plane"]
+            )
 
-            loss += self.loss_weights["floor_reg"] * nsteps * cur_loss_mv
-            stats_dict["floor_reg"] = cur_loss_mv
+            loss += self.loss_weights["floor_reg"] * nsteps * cur_loss
+            stats_dict["floor_reg"] = cur_loss
 
         return loss, stats_dict
 

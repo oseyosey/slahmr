@@ -425,7 +425,7 @@ class RootOptimizerMV(StageOptimizerMV):
         if not vis_mask_multi:
             vis_mask_multi = None
 
-        loss, stats_dict = self.loss(obs_data_multi, pred_data, self.matching_obs_data, self.rt_pairs_tensor, self.num_views, valid_mask_multi=vis_mask_multi)
+        loss, stats_dict = self.loss(obs_data_multi, pred_data, self.matching_obs_data, self.num_views, valid_mask_multi=vis_mask_multi)
         return loss, stats_dict, pred_data
 
 
@@ -489,7 +489,7 @@ class SMPLOptimizerMV(StageOptimizerMV):
         if not vis_mask_multi:
             vis_mask_multi = None
 
-        loss, stats_dict = self.loss(obs_data_multi, pred_data, self.model.seq_len, self.matching_obs_data, self.rt_pairs_tensor, self.num_views, valid_mask_multi=vis_mask_multi)
+        loss, stats_dict = self.loss(obs_data_multi, pred_data, self.model.seq_len, self.matching_obs_data, self.num_views, valid_mask_multi=vis_mask_multi)
         return loss, stats_dict, pred_data
 
 
@@ -554,7 +554,7 @@ class SmoothOptimizerMV(StageOptimizerMV):
         if not vis_mask_multi:
             vis_mask_multi = None
 
-        loss, stats_dict = self.loss(obs_data_multi, pred_data, self.model.seq_len, self.matching_obs_data, self.rt_pairs_tensor, self.num_views, valid_mask_multi=vis_mask_multi)
+        loss, stats_dict = self.loss(obs_data_multi, pred_data, self.model.seq_len, self.matching_obs_data, self.num_views, valid_mask_multi=vis_mask_multi)
         return loss, stats_dict, pred_data
 
 
@@ -654,7 +654,6 @@ class MotionOptimizerMV(StageOptimizerMV):
             world_preds,
             self.model.seq_len,
             self.matching_obs_data,
-            self.rt_pairs_tensor,
             self.num_views,
             valid_mask_multi=track_mask_multi, #* Currently unused
             init_motion_scale=motion_scale,

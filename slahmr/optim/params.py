@@ -177,7 +177,7 @@ class CameraParamsMV(CameraParams):
     Parameter container with cameras
     """
 
-    def set_cameras_mv(self, cam_data_init, cam_data_list, num_view, opt_scale_mv=False, opt_cams_mv=True, opt_focal_mv=True): # ? How should we set opt_scale ? ## 
+    def set_cameras_mv(self, cam_data_init, cam_data_list, num_view, opt_scale_mv=False, opt_cams_mv=True, opt_focal_mv=True, **kwargs): # ? How should we set opt_scale ? ## 
         """
         cam_data_list is a list of cam_data["cam_R"], cam_data["cam_t"]
         """
@@ -190,8 +190,7 @@ class CameraParamsMV(CameraParams):
         for i in range(1, num_view):
             cam_data = cam_data_list[i]
 
-            # (T, 3, 3), (T, 3)
-            cam_R, cam_t = cam_data
+            cam_R, cam_t = cam_data             # (T, 3, 3), (T, 3)
             intrins = cam_data_init["intrins"]  # (T, 4) #* We initialized intrinsics from the first camera
             T = cam_R.shape[0]
             device = cam_R.device # ? Check device type
@@ -204,24 +203,37 @@ class CameraParamsMV(CameraParams):
             #* We only want a single focal length for all timesteps
             # So we take the mean across time steps (or any other representative value)
             cam_f_mean = cam_f.mean(dim=0, keepdim=True).to(device)  # (1, 2)
-            #cam_f_mean = cam_f[0,:].unsqueeze(0)# (1, 2)
-
-            if self.opt_focal_mv:
-                print("SETTING FOCAL LENGTH FOR VIEW", i)
-                self.set_param(f"cam_f_{i}", cam_f_mean) # (1, 2) 
+            
+            # Loading cam_f from optimized results #
+            if f"cam_f_{i}" in kwargs:
+                print("LOADING FOCAL LENGTH FOR VIEW", i)
+                self.set_param(f"cam_f_{i}", kwargs[f"cam_f_{i}"], self.opt_focal_mv)
             else:
-                raise NotImplementedError
+                if self.opt_focal_mv:
+                    print("SETTING FOCAL LENGTH FOR VIEW", i)
+                    self.set_param(f"cam_f_{i}", cam_f_mean) # (1, 2) 
+                else:
+                    raise NotImplementedError
+            
 
             #* We only want a single camera pose for all timesteps
             cam_R_mean = cam_R.mean(dim=0, keepdim=True).to(device)  # (1, 3, 3)
             cam_t_mean = cam_t.mean(dim=0, keepdim=True).to(device)  # (1, 3)
             #* assume rotations in multi-view are same for all timesteps
-            if self.opt_cams_mv:
-                print("SETTING Rotation / Translation FOR VIEW", i)
-                self.set_param(f"cam_R_{i}", cam_R_mean)
-                self.set_param(f"cam_t_{i}", cam_t_mean)
+
+            # Loading cam_f from optimized results #
+            if f"cam_R_{i}" in kwargs and f"cam_t_{i}" in kwargs:
+                print("LOADING Rotation / Translation FOR VIEW", i)
+                self.set_param(f"cam_R_{i}", kwargs[f"cam_R_{i}"], self.opt_cams_mv)
+                self.set_param(f"cam_t_{i}", kwargs[f"cam_t_{i}"], self.opt_cams_mv)
             else:
-                raise NotImplementedError
+                if self.opt_cams_mv:
+                    print("SETTING Rotation / Translation FOR VIEW", i)
+                    self.set_param(f"cam_R_{i}", cam_R_mean)
+                    self.set_param(f"cam_t_{i}", cam_t_mean)
+                else:
+                    raise NotImplementedError
+
 
             world_scale = torch.ones(1, 1, device=device)
             if self.opt_scale_mv:
@@ -250,19 +262,16 @@ class CameraParamsMV(CameraParams):
         """
         extinsics_multi_mv = []
         for i in range(1, self.num_view):
-            if self.opt_cams_mv:
-                cam_R = self.get_param(f"cam_R_{i}")
-                cam_t = self.get_param(f"cam_t_{i}")
-                T = self._cam_R.shape[0]
-                cam_R = cam_R.repeat(T, 1, 1) #* Repeat cam_f for all time steps T
-                cam_t = cam_t.repeat(T, 1) #* Repeat cam_f for all time steps T
-                if self.opt_scale_mv:
-                    extinsics_multi_mv.append((cam_R, cam_t*self.get_param(f"world_scale_{i}")))
-                else:
-                    extinsics_multi_mv.append((cam_R, cam_t))
+            cam_R = self.get_param(f"cam_R_{i}")
+            cam_t = self.get_param(f"cam_t_{i}")
+            T = self._cam_R.shape[0]
+            cam_R = cam_R.repeat(T, 1, 1) #* Repeat cam_f for all time steps T
+            cam_t = cam_t.repeat(T, 1) #* Repeat cam_f for all time steps T
+            if self.opt_scale_mv:
+                extinsics_multi_mv.append((cam_R, cam_t*self.get_param(f"world_scale_{i}")))
             else:
-                raise NotImplementedError
-        
+                extinsics_multi_mv.append((cam_R, cam_t))
+    
         return extinsics_multi_mv
 
     def get_intrinsics_mv(self):

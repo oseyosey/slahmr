@@ -133,7 +133,6 @@ class MovingSceneModelMV(BaseSceneModelMV):
         """
         Logger.log("Initializing moving scene model with observed data")
 
-        ## 
         self.params.set_cameras(
             cam_data,
             opt_scale=self.opt_scale,
@@ -142,7 +141,9 @@ class MovingSceneModelMV(BaseSceneModelMV):
             **param_dict,
         )
 
-        #* initialize multi-view cameras
+        
+        #* initialize multi-view cameras *#
+        #* We want to initialized with the output from the previous optimization *#
         self.params.set_cameras_mv(
             cam_data,
             rt_pairs_tensor,
@@ -150,6 +151,7 @@ class MovingSceneModelMV(BaseSceneModelMV):
             opt_scale_mv=self.opt_scale_mv,
             opt_cams_mv=self.opt_cams_mv,
             opt_focal_mv=self.opt_focal_mv,
+            **param_dict
         ) 
 
 
@@ -177,7 +179,7 @@ class MovingSceneModelMV(BaseSceneModelMV):
                 floor_plane = obs_data["floor_plane"][: len(floor_plane)]
         else:  # fixed shared or separate floors
             num_floors = 1 if self.shared_floor else self.batch_size
-            floor_plane = obs_data["floor_plane"][:num_floors]
+            floor_plane = obs_data["floor_plane"][:num_floors] #* This is the floor plane from the SLAHMR results #*
             if self.shared_floor:
                 floor_idcs = torch.zeros(
                     self.batch_size, dtype=torch.long, device=floor_plane.device
@@ -242,6 +244,7 @@ class MovingSceneModelMV(BaseSceneModelMV):
         self.params.set_param("trans_vel", trans_vel[:, :1].detach())
         self.params.set_param("joints_vel", joints_vel[:, :1].detach())
         self.params.set_param("root_orient_vel", root_orient_vel[:, :1].detach())
+        
 
     def get_optim_result(self, num_steps=-1):
         res = super().get_optim_result()
