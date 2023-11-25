@@ -31,3 +31,5 @@ sources:
 multi_view: True
 multi_view_num: 2
 cv_duration: 48
+cv_starting_frame: 25
+run_pnp: False

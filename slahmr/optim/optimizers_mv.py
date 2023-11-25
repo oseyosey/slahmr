@@ -201,15 +201,6 @@ class StageOptimizerMV(object):
         vis_mask_world = torch.ones((batch_world, length_world)).to(device=obs_data['joints2d'].device) # Render all joints2d in the world
         track_id_world = torch.arange(1,batch_world+1).to(device=obs_data['joints2d'].device)
 
-        # scene_dict = move_to(
-        #     prep_result_vis(
-        #         res_dict,
-        #         obs_data["vis_mask"],
-        #         obs_data["track_id"],
-        #         self.model.body_model,
-        #     ),
-        #     "cpu",
-        # )
 
         scene_dict = move_to(
             prep_result_vis_mv(

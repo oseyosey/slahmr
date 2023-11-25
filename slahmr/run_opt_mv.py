@@ -503,7 +503,7 @@ def main(cfg: DictConfig):
     
 
     ## Run Multi-view PnP to obtain Camera Pose ##
-    rt_pairs = run_pnp(cfg, out_dir_muli, out_dir_muli[0], cv_data_path, device)
+    rt_pairs = run_pnp(cfg, out_dir_muli, out_dir_muli[0], cv_data_path, device, starting_frame=cfg.data.cv_starting_frame, run_pnp=cfg.data.run_pnp)
     print("rt_pairs", rt_pairs)
 
 

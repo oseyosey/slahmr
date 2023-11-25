@@ -23,13 +23,15 @@ from body_model import SMPL_JOINTS, KEYPT_VERTS, smpl_to_openpose, run_smpl
 from geometry.camera import perspective_projection
 
 
-def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device):
+def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device, starting_frame=0, run_pnp=True):
     """
     Solve for PnP to obtain Camera Pose
     # 3D keypoints path from SLAHMR:
     # 2D keypoints path from 4D-Human(PHALP): 
     # Cross view matching path: 
     # Obtain cross view matching: return a list of 
+    # Starting frame: run PNP from this frame
+    # Run PnP: True or False 
     """
     ## Load cross view matching
     with open(cv_match_path, "rb") as f:
@@ -72,9 +74,13 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device)
 
     ## Obtain camera pose for each frame
     rt_pairs = []
-    #append rt_pairs with (R=Eye(), T=zeros(). 
-    rt_pairs.append((np.eye(3) ,np.zeros((3, 1)))) 
+    rt_pairs.append((np.zeros((3, 1)), np.zeros((3, 1)) )) #append rt_pairs with (R=Eye(), T=zeros(). 
 
+    ##* In the case of not using PnP ##*
+    if run_pnp == False:
+        for num_view in range(1, cfg.data.multi_view_num):
+            rt_pairs.append((np.zeros((3, 1)), np.zeros((3, 1)) ))
+        return rt_pairs
             
     fx = data_dict_slahmr_world['intrins'][0]
     fy = data_dict_slahmr_world['intrins'][1]
@@ -87,8 +93,8 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device)
         
         points_3D_world = []
         points_2D_camera = []
-        # breakpoint()
-        for t_ in range(min(frame, frame_slahmr)):
+        # breakpoint() 
+        for t_ in range(starting_frame, min(frame, frame_slahmr)): #* Introduce starting index frame 
             ## Obtain BBoox from 2D keypoitns at camera coordiante
             joints_2d_data = joints_2d_data_mv[num_view-1][t_] ## num_view - 1 because we didn't store view 0 (world camera)
             joints_2d_detected_camera = np.array(joints_2d_data)
@@ -112,10 +118,10 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device)
         
         # breakpoint()
         print(f"RUNNING RANSAC PnP ROBUST on Camera {num_view}")
-        n = int(len(points_3D_world) / (25*4))
+        n = int(len(points_3D_world) / (25*8))
 
         ## Need additional parameter finetuning
-        refined_pose = ransac_pnp_robust(points_3D_world, points_2D_camera, camera_matrix, n=n, k=5000, d=25 * (n/2), percentile=90, sample_ratio=0.8, verbose=False)
+        refined_pose = ransac_pnp_robust(points_3D_world, points_2D_camera, camera_matrix, n=n, k=5000, d=25 * (n/2), percentile=95, sample_ratio=0.8, verbose=False)
         rt_pairs.append(refined_pose)
 
     return rt_pairs
