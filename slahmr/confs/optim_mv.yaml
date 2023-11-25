@@ -6,7 +6,7 @@ optim:
     lr: 1.0
     lbfgs_max_iter: 20
     save_every: 20
-    vis_every: 20
+    vis_every: 10
     max_chunk_steps: 20
     save_meshes: False
 
@@ -27,7 +27,7 @@ optim:
     opt_cams: True # GAROT
 
   loss_weights:
-    joints2d: [0.004, 0.004, 0.004] #joints2d: [0.001, 0.001, 0.001]
+    joints2d: [0.001, 0.001, 0.001] #joints2d: [0.001, 0.001, 0.001]
     bg2d: [0.0, 0.000, 0.000]
     cam_R_smooth : [0.0, 0.0, 0.0]
     cam_t_smooth : [0.0, 0.0, 0.0]
@@ -39,7 +39,7 @@ optim:
     joints3d_rollout: [1.0, 1.0, 0.1] #joints3d_rollout: [0.0, 0.0, 0.0]
     verts3d: [0.0, 0.0, 0.0]
     points3d: [0.0, 0.0, 0.0]
-    pose_prior: [0.00, 0.00, 0.00] #pose_prior: [0.04, 0.04, 0.04]
+    pose_prior: [0.04, 0.04, 0.04] #pose_prior: [0.04, 0.04, 0.04]
     shape_prior: [0.05, 0.05, 0.05]
     motion_prior: [0.0, 0.0, 0.0075] #motion_prior: [0.0, 0.0, 0.075]
     init_motion_prior: [0.0, 0.0, 0.075] #motion_prior: [0.0, 0.0, 0.075]

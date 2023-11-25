@@ -2,7 +2,7 @@
 
 type: images
 split: val
-root: /share/kuleshov/jy928/slahmr/slahmr/output/panop_ultimatum1  # put your videos in root/videos/vid.mp4
+root: /share/kuleshov/jy928/slahmr/slahmr/output/panop_cello_5  # put your videos in root/videos/vid.mp4
 video_dir: videos
 seq: Camera0
 ext: mp4
@@ -15,8 +15,8 @@ frame_opts:
 use_cams: True
 track_ids: "all"
 shot_idx: 0
-start_idx: 1
-end_idx: 60
+start_idx: 0
+end_idx: 30
 split_cameras: True
 name: ${data.seq}-${data.track_ids}-shot-${data.shot_idx}-${data.start_idx}-${data.end_idx}
 sources:
@@ -29,4 +29,4 @@ sources:
 
 multi_view: True
 multi_view_num: 2
-cv_duration: 48
+cv_duration: 12

@@ -6,7 +6,7 @@ optim:
     lr: 1.0
     lbfgs_max_iter: 20
     save_every: 20
-    vis_every: -1 #for debug purposes
+    vis_every: 10 #for debug purposes
     max_chunk_steps: 20
     save_meshes: False
 
@@ -20,7 +20,7 @@ optim:
     opt_scale: False
     num_iters: 60
 
-  motion_chunks:
+  d:
     chunk_size: 10
     init_steps: 20
     chunk_steps: 20

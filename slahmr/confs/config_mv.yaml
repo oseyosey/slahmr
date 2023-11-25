@@ -1,6 +1,6 @@
 defaults:
   - data: posetrack
-  # - optim
+  - optim
   - optim_mv ## Here optimization weights for mv
   - _self_
 

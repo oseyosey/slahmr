@@ -200,18 +200,26 @@ class CameraParamsMV(CameraParams):
             self.cam_center = intrins[:, 2:]  # (T, 2)
 
             cam_f = copy.deepcopy(intrins[:, :2])  # (T, 2)
+
+            #* We only want a single focal length for all timesteps
+            # So we take the mean across time steps (or any other representative value)
+            cam_f_mean = cam_f.mean(dim=0, keepdim=True).to(device)  # (1, 2)
+            #cam_f_mean = cam_f[0,:].unsqueeze(0)# (1, 2)
+
             if self.opt_focal_mv:
                 print("SETTING FOCAL LENGTH FOR VIEW", i)
-                self.set_param(f"cam_f_{i}", cam_f)
+                self.set_param(f"cam_f_{i}", cam_f_mean) # (1, 2) 
             else:
                 raise NotImplementedError
 
-
+            #* We only want a single camera pose for all timesteps
+            cam_R_mean = cam_R.mean(dim=0, keepdim=True).to(device)  # (1, 3, 3)
+            cam_t_mean = cam_t.mean(dim=0, keepdim=True).to(device)  # (1, 3)
             #* assume rotations in multi-view are same for all timesteps
             if self.opt_cams_mv:
                 print("SETTING Rotation / Translation FOR VIEW", i)
-                self.set_param(f"cam_R_{i}", cam_R)
-                self.set_param(f"cam_t_{i}", cam_t)
+                self.set_param(f"cam_R_{i}", cam_R_mean)
+                self.set_param(f"cam_t_{i}", cam_t_mean)
             else:
                 raise NotImplementedError
 
@@ -227,8 +235,9 @@ class CameraParamsMV(CameraParams):
         intrins_multi_mv = []
         for i in range(1, self.num_view):
             cam_f = self.get_param(f"cam_f_{i}")
-            cam_center = self.cam_center[0]
-            intrins_multi_mv.append(torch.cat([cam_f[0], cam_center], dim=-1).detach().cpu())
+
+            cam_center = self.cam_center[0] #Take one element out
+            intrins_multi_mv.append(torch.cat([cam_f[0], cam_center], dim=-1).detach().cpu()) #* cam_f[0] selects the first element to be (2,)
         
         return intrins_multi_mv
             
@@ -244,6 +253,9 @@ class CameraParamsMV(CameraParams):
             if self.opt_cams_mv:
                 cam_R = self.get_param(f"cam_R_{i}")
                 cam_t = self.get_param(f"cam_t_{i}")
+                T = self._cam_R.shape[0]
+                cam_R = cam_R.repeat(T, 1, 1) #* Repeat cam_f for all time steps T
+                cam_t = cam_t.repeat(T, 1) #* Repeat cam_f for all time steps T
                 if self.opt_scale_mv:
                     extinsics_multi_mv.append((cam_R, cam_t*self.get_param(f"world_scale_{i}")))
                 else:
@@ -276,9 +288,16 @@ class CameraParamsMV(CameraParams):
             if idcs is None: ## ? Idcs might not be correct here. 
                 idcs = np.arange(self._cam_R.shape[0])
 
+            ## extrinsics
             cam_R, cam_t = extinsics_multi_mv[i-1] #* Note that we only store from view 1,...,V (exluding view0)
             cam_R, cam_t = cam_R[None, idcs], cam_t[None, idcs]
-            cam_f, cam_center = self.cam_f[idcs], self.cam_center[idcs]
+
+            ## intrinsics
+            T = cam_t.shape[1]
+            cam_center = self.cam_center[idcs]
+            cam_f = self.get_param(f"cam_f_{i}")
+            cam_f = cam_f.repeat(T, 1) #* Repeat cam_f for all time steps T
+            cam_f = cam_f[idcs]
 
             B = self.batch_size
             cam_R = cam_R.repeat(B, 1, 1, 1)

@@ -304,7 +304,7 @@ class StageOptimizerMV(object):
             else:
                 self.save_checkpoint(out_dir_init)
 
-            if ((i + 1) % self.vis_every == 0):  # * render as well as render before init.
+            if ((i + 1) % self.vis_every == 0) or (i == 0):  # * render as well as render before init.
                 # visualize for every view
                 for num_view in range(self.num_views):
                     #breakpoint()

@@ -83,7 +83,7 @@ class RootLossMV(StageLossMV):
 
                     ##*  select the pred_data (to match with our observed_data) ##
                     device = observed_data["joints2d"].get_device()
-                    pred_joints2d_select = torch.empty(observed_data['joints2d'].size()[:-1] + (2,)).to(device)
+                    pred_joints2d_select = torch.zeros(observed_data['joints2d'].size()[:-1] + (2,)).to(device)
                     matching_obs_data_per_view = matching_obs_data[num_view]
                     for world_index, camera_data_list in matching_obs_data_per_view.items():
                         for camera_data in camera_data_list:
@@ -119,7 +119,7 @@ class RootLossMV(StageLossMV):
                         )
 
                     device = observed_data["joints2d"].get_device()
-                    pred_joints2d_select = torch.empty(observed_data['joints2d'].size()[:-1] + (2,)).to(device) # * the last dimension should be 2 instead of 3. 
+                    pred_joints2d_select = torch.zeros(observed_data['joints2d'].size()[:-1] + (2,)).to(device) # * the last dimension should be 2 instead of 3. 
                                                                                                                 # * observed_data['joints2d'].size() is used to dermine batch size of the observed data
 
                     ## * Addressed the problem of world_stitch_data having more or less batch size than observed_data. ##
@@ -147,13 +147,9 @@ class RootLossMV(StageLossMV):
      
             cur_loss_mv = 0.0
             for num_view in range(num_views):
-                if valid_mask_multi is not None:
-                    valid_mask = valid_mask_multi[num_view]
-                else:
-                    valid_mask = None
 
                 ## * select the pred_data (to match with our observed_data) ##
-                pred_joints3d_select = torch.empty((observed_data_list[num_view]['joints2d'].shape[0],) + (pred_data["joints3d"].shape[1], pred_data["joints3d"].shape[2], pred_data["joints3d"].shape[3])) # * Match the dimension
+                pred_joints3d_select = torch.zeros((observed_data_list[num_view]['joints2d'].shape[0],) + (pred_data["joints3d"].shape[1], pred_data["joints3d"].shape[2], pred_data["joints3d"].shape[3])) # * Match the dimension
                 
                 matching_obs_data_per_view = matching_obs_data[num_view] 
                 for world_index, camera_data_list in matching_obs_data_per_view.items():
@@ -164,7 +160,16 @@ class RootLossMV(StageLossMV):
 
                 device = pred_data["joints3d"].device
                 pred_joints3d_select = pred_joints3d_select.to(device)
-                cur_loss = joints3d_smooth_loss(pred_joints3d_select, valid_mask) 
+
+                if valid_mask_multi is not None:
+                    cur_loss = joints3d_smooth_loss(
+                        pred_joints3d_select, valid_mask_multi[num_view]
+                    )
+                else:
+                    cur_loss = joints3d_smooth_loss(
+                        pred_joints3d_select
+                    )    
+
                 cur_loss_mv += cur_loss
             loss += self.loss_weights["joints3d_smooth"] * cur_loss_mv
             stats_dict["joints3d_smooth"] = cur_loss_mv
@@ -224,7 +229,7 @@ class SMPLLossMV(RootLossMV):
                 # * Select latent pose corresponding to the observed data# 
                 batch_size_obs = observed_data["joints2d"].shape[0] 
                 device = observed_data["joints2d"].get_device()
-                pred_latent_pose_select = torch.empty(batch_size_obs, *pred_data["latent_pose"].shape[1:]).to(device)
+                pred_latent_pose_select = torch.zeros(batch_size_obs, *pred_data["latent_pose"].shape[1:]).to(device)
 
                 matching_obs_data_per_view = matching_obs_data[num_view]
                 for world_index, camera_data_list in matching_obs_data_per_view.items():
