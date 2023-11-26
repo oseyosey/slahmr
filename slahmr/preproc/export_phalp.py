@@ -112,12 +112,16 @@ def unpack_frame(track_data):
         global_orient = smpl["global_orient"].squeeze()  # (3, 3)
         global_orient_aa = cv2.Rodrigues(global_orient)[0].squeeze()  # (3,)
 
+        ##Adding joints3D to the output
+        joints3d = track_data["3d_joints"][i].squeeze()  # (23, 3)
+
         out_dict[tid] = {
             "betas": betas.tolist(),
             "body_pose": body_pose_aa.tolist(),
             "global_orient": global_orient_aa.tolist(),
             "cam_trans": cam_trans.tolist(),
             "appe": appe.tolist(),
+            "joints3d": joints3d.tolist(),
         }
 
     return out_dict

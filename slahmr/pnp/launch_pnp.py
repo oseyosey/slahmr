@@ -609,7 +609,6 @@ def match_two_bbox_sets(bbox_projected_world, bbox_detected_camera, cross_view_d
     matches_A, _ = match_bboxes(bbox_projected_world, cross_view_data, frame, camera1, max_iou_threshold=max_iou_threshold)
     #print(matches_A)
     
-    breakpoint()
     # Step 4b: Match Set B with cross_view_matching['cross_view_match']
     matches_B, cross_view_bboxes = match_bboxes(bbox_detected_camera, cross_view_data, frame, camera2)
     #print(matches_B)

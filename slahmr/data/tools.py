@@ -56,8 +56,9 @@ def read_smpl_preds(pred_path, num_betas=10):
     trans = np.zeros(3)
     betas = np.zeros(num_betas)
     appe = np.zeros(4096)
+    joints3d = np.zeros((45, 3))
     if not os.path.isfile(pred_path):
-        return pose, rot, trans, betas, appe
+        return pose, rot, trans, betas, appe, joints3d
 
     with open(pred_path, "r") as f:
         data = json.load(f)
@@ -77,7 +78,11 @@ def read_smpl_preds(pred_path, num_betas=10):
     if "appe" in data:
         appe = np.array(data["appe"], dtype=np.float32)
 
-    return pose, rot, trans, betas, appe
+    if "joints3d" in data:
+        joints3d = np.array(data["joints3d"], dtype=np.float32)
+    
+
+    return pose, rot, trans, betas, appe, joints3d
 
 
 def load_smpl_preds(pred_paths, interp=True, num_betas=10):
@@ -87,11 +92,11 @@ def load_smpl_preds(pred_paths, interp=True, num_betas=10):
     # load single image smpl predictions
     stack_fnc = functools.partial(np.stack, axis=0)
     # (N, 23, 3), (N, 3), (N, 3), (N, 10), (N, 4096)
-    pose, orient, trans, betas, appe = map(
+    pose, orient, trans, betas, appe, joints3d = map(
         stack_fnc, zip(*[read_smpl_preds(p, num_betas=num_betas) for p in pred_paths])
     )
     if not interp:
-        return pose, orient, trans, betas, appe
+        return pose, orient, trans, betas, appe, joints3d ##TODO: joints3d
 
     # interpolate the occluded tracks
     orient_slerp = Slerp(vis_idcs, Rotation.from_rotvec(orient[vis_idcs]))
@@ -100,6 +105,7 @@ def load_smpl_preds(pred_paths, interp=True, num_betas=10):
     
     ## GAROT Implementation
     appe_interp = interp1d(vis_idcs, appe[vis_idcs], axis=0)
+    joints3d_interp = interp1d(vis_idcs, joints3d[vis_idcs], axis=0)
 
     tmin, tmax = min(vis_idcs), max(vis_idcs) + 1
     times = np.arange(tmin, tmax)
@@ -108,10 +114,11 @@ def load_smpl_preds(pred_paths, interp=True, num_betas=10):
     betas[times] = betas_interp(times)
 
     appe[times] = appe_interp(times)
+    joints3d[times] = joints3d_interp(times)
 
     # interpolate for each joint angle
     for i in range(pose.shape[1]):
         pose_slerp = Slerp(vis_idcs, Rotation.from_rotvec(pose[vis_idcs, i]))
         pose[times, i] = pose_slerp(times).as_rotvec()
 
-    return pose, orient, trans, betas, appe
+    return pose, orient, trans, betas, appe, joints3d

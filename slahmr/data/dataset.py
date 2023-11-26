@@ -198,6 +198,7 @@ class MultiPeopleDataset(Dataset):
             "init_root_orient": [],
             "init_trans": [],
             "init_appe": [], ## added appearance
+            "joints3d": [], ## added joints3d
         }
 
         # create batches of sequences
@@ -232,7 +233,7 @@ class MultiPeopleDataset(Dataset):
             pred_paths = [
                 f"{self.track_dirs[i]}/{x}_smpl.json" for x in self.sel_img_names
             ]
-            pose_init, orient_init, trans_init, betas_init, appe_init = load_smpl_preds(
+            pose_init, orient_init, trans_init, betas_init, appe_init, joints3d = load_smpl_preds(
                 pred_paths, interp=interp_input
             )
 
@@ -243,6 +244,7 @@ class MultiPeopleDataset(Dataset):
 
             ##GAROT Implementation
             data_out["init_appe"].append(appe_init)
+            data_out["joints3d"].append(joints3d)
 
             data_out["floor_plane"].append(DEFAULT_GROUND[:3] * DEFAULT_GROUND[3:])
 
@@ -285,6 +287,8 @@ class MultiPeopleDataset(Dataset):
 
         ## Gaort Implementation
         obs_data["init_appe"] = torch.Tensor(self.data_dict["init_appe"][idx]) ## added appearance
+        obs_data["joints3d"] = torch.Tensor(self.data_dict["joints3d"][idx]) ## added joints3d
+
         return obs_data
 
     def load_camera_data(self):

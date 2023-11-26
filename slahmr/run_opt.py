@@ -99,7 +99,7 @@ def run_opt(cfg, dataset, out_dir, device):
     save_initial_predictions(base_model, os.path.join(out_dir, "init"), args.seq)
 
     opts = cfg.optim.options
-    vis_scale = 0.25
+    vis_scale = 0.75
     vis = None
     if opts.vis_every > 0:
         vis = init_viewer(

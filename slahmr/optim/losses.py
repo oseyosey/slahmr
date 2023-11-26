@@ -270,11 +270,13 @@ class MotionLoss(SMPLLoss):
             )  # must scale since doesn't scale with more steps
             stats_dict["init_motion_prior"] = cur_loss
 
+        #TODO: 45 Joints and 25 Joints OP issue.
         # make sure joints consistent between SMPL and direct motion prior output
         if (
             "joints3d_rollout" in pred_data
             and "joints3d" in pred_data
             and self.loss_weights["joint_consistency"] > 0.0
+            and False
         ):
             cur_loss = joint_consistency_loss(
                 pred_data["joints3d"],

@@ -124,7 +124,7 @@ class BaseSceneModelMV(nn.Module):
         print("OPT MULTI-VIEW CAMERAS", self.opt_focal_mv)
 
 
-    def initialize(self, obs_data_list, cam_data, slahmr_data_init, rt_pairs_tensor, debug=False):
+    def initialize(self, obs_data_list, cam_data, slahmr_data_init, rt_pairs_tensor, debug=False, use_slahmr=True):
         """
         Intializating Multi-view people in the world
         obs_data_list: list of observed data in data loader format
@@ -162,7 +162,7 @@ class BaseSceneModelMV(nn.Module):
             
             init_betas = torch.zeros(B, self.num_betas, device=device)
 
-            if self.use_init and num_view == 0: # Appending SLAHMR Results
+            if self.use_init and num_view == 0 and use_slahmr: # Appending SLAHMR Results
                 init_pose = slahmr_data_init["pose_body"].view(self.batch_size, self.seq_len, 21, 3) # origionally (B, T, 63)
                 init_pose = init_pose[:, :, :J_BODY, :]
                 init_pose_latent = self.pose2latent(init_pose)
@@ -190,7 +190,7 @@ class BaseSceneModelMV(nn.Module):
                 R_c2w = R_w2c.transpose(-1, -2)
                 t_c2w = -torch.einsum("tij,tj->ti", R_c2w, t_w2c)
  
-            if self.use_init and num_view == 0: ## Appending SLAHMR Results
+            if self.use_init and num_view == 0 and use_slahmr: ## Appending SLAHMR Results
                 init_rot = slahmr_data_init["root_orient"]
                 init_rot_mat = angle_axis_to_rotation_matrix(init_rot)
                 init_rot_mat = torch.einsum("tij,btjk->btik", R_c2w, init_rot_mat)

@@ -107,6 +107,15 @@ class RootLossMV(StageLossMV):
                                                                                                 ## We may need to check the dimension ([49, 3, 3]), we want ([3, 49, 3, 3]). 
 
                     batch_size_world = pred_data["joints3d_op"].shape[0]
+                    T_world = pred_data["joints3d_op"].shape[1]
+
+                    #* Adapt to Motion Chunk Optimization *#
+                    if cam_R.shape[1] != T_world:
+                        cam_R = cam_R[:, :T_world, :, :]
+                        cam_t = cam_t[:, :T_world, :]
+                        cam_f = cam_f[:T_world, :]
+                        cam_center = cam_center[:T_world, :]
+
 
                     #? I don't think we need to do that, becuase in get_cameras_mv it already calls the batch_size_world ?#
                     # cam_R = cam_R.repeat(batch_size_world, 1, 1, 1) ##TODO (Solved): Adapt to Batch size
@@ -365,11 +374,13 @@ class MotionLossMV(SMPLLossMV):
 
 
         # make sure rolled out joints match observations too
+        breakpoint()
         if (
             "joints3d" in observed_data_list[0]
             and "joints3d_rollout" in pred_data
             and self.loss_weights["joints3d_rollout"] > 0.0
         ):
+        
             cur_loss_mv = 0.0
             for num_view in range(num_views):
                 cur_loss = joints3d_loss(

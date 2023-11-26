@@ -629,6 +629,7 @@ class MotionOptimizerMV(StageOptimizerMV):
         ]
         param_dict = p.get_vars(param_names)
         param_dict["floor_plane"] = p.floor_plane[p.floor_idcs]
+        
 
         preds, world_preds = self.model.rollout_smpl_steps(num_steps)
         preds.update(param_dict)
@@ -640,6 +641,10 @@ class MotionOptimizerMV(StageOptimizerMV):
         T = track_mask.shape[1] if track_mask is not None else num_steps
         world_preds["cameras"] = p.get_cameras(np.arange(T))
 
+        #* Test: put cameras in preds *#
+        # preds["cameras"] = p.get_cameras(np.arange(T))
+        # preds["cameras_multi_mv"] = p.get_cameras_mv()
+
 
         ##TODO Update: Track mask is vis_mask but cut in chunks. (Batch_size, T_subset) ##
         track_mask_multi = []
@@ -649,6 +654,8 @@ class MotionOptimizerMV(StageOptimizerMV):
         if self.opt_cams: ## ? GAROT will not optimize camera?
             cam_R, cam_t = p.get_extrinsics()
             world_preds["cam_R"], world_preds["cam_t"] = cam_R[:T], cam_t[:T]
+            #preds["cam_R"], preds["cam_t"] = cam_R[:T], cam_t[:T]
+            
 
         # ? why do we need to slice the obs_data_list? 
         obs_data_list_sliced = []

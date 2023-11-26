@@ -107,8 +107,8 @@ class StageOptimizer(object):
             print("WORLD_SCALE", param_dict["world_scale"].detach().cpu())
         if "floor_plane" in param_dict:
             print("FLOOR PLANE", param_dict["floor_plane"].detach().cpu())
-        if "cam_f" in param_dict:
-            print("CAM_F", param_dict["cam_f"].detach().cpu())
+        # if "cam_f" in param_dict:
+        #     print("CAM_F", param_dict["cam_f"].detach().cpu())
         torch.save(param_dict, param_path)
         Logger.log(f"Model saved at {param_path}")
 
@@ -522,6 +522,7 @@ class MotionOptimizer(StageOptimizer):
         track_mask = world_preds.get("track_mask", None)
         T = track_mask.shape[1] if track_mask is not None else num_steps
         world_preds["cameras"] = p.get_cameras(np.arange(T))
+
         if self.opt_cams:
             cam_R, cam_t = p.get_extrinsics()
             world_preds["cam_R"], world_preds["cam_t"] = cam_R[:T], cam_t[:T]
