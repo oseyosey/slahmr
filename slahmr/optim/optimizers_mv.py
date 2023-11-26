@@ -115,8 +115,8 @@ class StageOptimizerMV(object):
             print("WORLD_SCALE", param_dict["world_scale"].detach().cpu())
         if "floor_plane" in param_dict:
             print("FLOOR PLANE", param_dict["floor_plane"].detach().cpu())
-        if "cam_f" in param_dict:
-            print("CAM_F", param_dict["cam_f"].detach().cpu())
+        # if "cam_f" in param_dict:
+        #     print("CAM_F", param_dict["cam_f"].detach().cpu())
         torch.save(param_dict, param_path)
         Logger.log(f"Model saved at {param_path}")
 
@@ -513,8 +513,9 @@ class SmoothOptimizerMV(StageOptimizerMV):
         param_names = ["trans", "root_orient", "betas", "latent_pose"]
         if model.opt_scale:
             param_names += ["world_scale"]
-        if model.opt_cams:
+        if model.opt_cams: ##TODO: TEmporary Solution
             param_names += ["cam_f", "delta_cam_R"]
+
 
         super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs)
 
@@ -581,6 +582,15 @@ class MotionOptimizerMV(StageOptimizerMV):
         if self.opt_cams:
             Logger.log(f"{self.name} OPTIMIZING CAMERAS")
             param_names += ["delta_cam_R", "cam_f"] ## if opt_cams, ["delta_cam_R", "cam_f"] will be improved.
+        
+        if model.opt_cams_mv:
+            Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS ROTATION AND TRANSLATION")
+            for i in range(1, num_views):
+                param_names += [f"cam_R_{i}", f"cam_t_{i}"]
+        if model.opt_focal_mv:
+            Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS FOCAL LENGTH")
+            for i in range(1, num_views):
+                param_names += [f"cam_f_{i}"]
 
         #super().__init__(self.name, model, param_names, **kwargs)
         super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs) 
@@ -631,11 +641,10 @@ class MotionOptimizerMV(StageOptimizerMV):
         world_preds["cameras"] = p.get_cameras(np.arange(T))
 
 
-        ##TODO Update: Not true. Will be different from vis_mask from obs_data_list
+        ##TODO Update: Track mask is vis_mask but cut in chunks. (Batch_size, T_subset) ##
         track_mask_multi = []
         for num_view in range(self.num_views):
             track_mask_multi.append(track_mask) #! Problem! 
-
     
         if self.opt_cams: ## ? GAROT will not optimize camera?
             cam_R, cam_t = p.get_extrinsics()
@@ -646,7 +655,8 @@ class MotionOptimizerMV(StageOptimizerMV):
         for obs_data in obs_data_list:
             obs_data_sliced = slice_dict(obs_data, 0, T)
             obs_data_list_sliced.append(obs_data_sliced)
-        
+
+
         motion_scale = self.get_motion_scale()
         loss, stats_dict = self.loss(
             obs_data_list_sliced,

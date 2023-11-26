@@ -59,7 +59,7 @@ class MovingSceneModelMV(BaseSceneModelMV):
         init_motion_prior=None,
         fit_gender="neutral",
         use_init=False,
-        opt_cams=False,
+        opt_cams=True,
         opt_scale=True,
         cam_graph=False,
         est_floor=True,
@@ -132,7 +132,7 @@ class MovingSceneModelMV(BaseSceneModelMV):
         obs_data_list: list of observed data in data loader format
         """
         Logger.log("Initializing moving scene model with observed data")
-
+        
         self.params.set_cameras(
             cam_data,
             opt_scale=self.opt_scale,

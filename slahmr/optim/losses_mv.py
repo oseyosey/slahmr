@@ -280,7 +280,7 @@ class MotionLossMV(SMPLLossMV):
         nsteps,
         matching_obs_data,
         num_views,
-        valid_mask_multi=None,
+        valid_mask_multi=None, ##TODO
         init_motion_scale=1.0,
     ):
         """
@@ -294,7 +294,7 @@ class MotionLossMV(SMPLLossMV):
         """
         cam_pred_data["latent_pose"] = pred_data["latent_pose"]
         loss, stats_dict = super().forward(
-            observed_data_list, pred_data, nsteps, matching_obs_data, num_views
+            observed_data_list, pred_data, nsteps, matching_obs_data, num_views, valid_mask_multi
         )
 
         #valid_mask = valid_mask_multi[0] #Could be none or could be a valid mask
@@ -364,7 +364,6 @@ class MotionLossMV(SMPLLossMV):
             stats_dict["bone_length"] = cur_loss
 
 
-        ##TODO: JOINTS3D WIll not be used here!
         # make sure rolled out joints match observations too
         if (
             "joints3d" in observed_data_list[0]

@@ -23,7 +23,7 @@ from body_model import SMPL_JOINTS, KEYPT_VERTS, smpl_to_openpose, run_smpl
 from geometry.camera import perspective_projection
 
 
-def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device, starting_frame=0, run_pnp=True):
+def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device, starting_frame=0, run_pnp=True, max_iou_threshold=0.4):
     """
     Solve for PnP to obtain Camera Pose
     # 3D keypoints path from SLAHMR:
@@ -107,7 +107,7 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device,
 
             ## check for empty list
             if len(bbox_2d_detected_camera) != 0 and len(bbox_2d_reprojected_world) != 0 and len(cross_view_matching['cross_view_match'][t_]) !=0:
-                match_pairs_per_frame = match_two_bbox_sets(bbox_2d_reprojected_world, bbox_2d_detected_camera, cross_view_matching['cross_view_match'], frame=t_, camera1=0, camera2=num_view)
+                match_pairs_per_frame = match_two_bbox_sets(bbox_2d_reprojected_world, bbox_2d_detected_camera, cross_view_matching['cross_view_match'], frame=t_, camera1=0, camera2=num_view, max_iou_threshold=max_iou_threshold)
                 for pair in match_pairs_per_frame:
                     points_3D_world.append(joints_3d_data[pair[0]])
                     points_2D_camera.append(joints_2d_data[pair[1]])
@@ -118,7 +118,7 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device,
         
         # breakpoint()
         print(f"RUNNING RANSAC PnP ROBUST on Camera {num_view}")
-        n = int(len(points_3D_world) / (25*8))
+        n = int(len(points_3D_world) / (25*4))
 
         ## Need additional parameter finetuning
         refined_pose = ransac_pnp_robust(points_3D_world, points_2D_camera, camera_matrix, n=n, k=5000, d=25 * (n/2), percentile=95, sample_ratio=0.8, verbose=False)
@@ -571,7 +571,7 @@ def compute_iou(bbox1, bbox2):
     return iou
 
 
-def match_bboxes(reprojected_bboxes, cross_view_data, frame, camera):
+def match_bboxes(reprojected_bboxes, cross_view_data, frame, camera, max_iou_threshold=0.4):
     """
     Match subjects between reprojected bounding boxes and cross_view_data based on IoU.
     """
@@ -594,21 +594,22 @@ def match_bboxes(reprojected_bboxes, cross_view_data, frame, camera):
                 max_iou = iou
                 max_j = j
         
-        if max_iou > 0.4:  # Threshold can be adjusted
+        if max_iou > max_iou_threshold:  # Threshold can be adjusted
             matches.append((i, max_j))
     
     ## matches return the indices of bboxes, and cross_view_bboxes
     return matches, cross_view_bboxes
 
 
-def match_two_bbox_sets(bbox_projected_world, bbox_detected_camera, cross_view_data, frame, camera1=None, camera2=None):
+def match_two_bbox_sets(bbox_projected_world, bbox_detected_camera, cross_view_data, frame, camera1=None, camera2=None, max_iou_threshold=0.4):
     """
     Match two sets of bounding boxes through the cross_view_data.
     """
     # Step 4a: Match Set A with cross_view_matching['cross_view_match']
-    matches_A, _ = match_bboxes(bbox_projected_world, cross_view_data, frame, camera1)
+    matches_A, _ = match_bboxes(bbox_projected_world, cross_view_data, frame, camera1, max_iou_threshold=max_iou_threshold)
     #print(matches_A)
     
+    breakpoint()
     # Step 4b: Match Set B with cross_view_matching['cross_view_match']
     matches_B, cross_view_bboxes = match_bboxes(bbox_detected_camera, cross_view_data, frame, camera2)
     #print(matches_B)
