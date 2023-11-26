@@ -2,7 +2,7 @@
 
 type: images
 split: val
-root: /share/kuleshov/jy928/slahmr/slahmr/output/panop_build1  # put your videos in root/videos/vid.mp4
+root: /share/kuleshov/jy928/slahmr/slahmr/output/panop_triple  # put your videos in root/videos/vid.mp4
 video_dir: videos
 seq: Camera0
 ext: mp4
@@ -16,7 +16,7 @@ use_cams: True
 track_ids: "all"
 shot_idx: 0
 start_idx: 1
-end_idx: 150
+end_idx: 120
 split_cameras: True
 name: ${data.seq}-${data.track_ids}-shot-${data.shot_idx}-${data.start_idx}-${data.end_idx}
 sources:
@@ -25,12 +25,5 @@ sources:
   tracks: ${data.root}/slahmr/phalp_out/track_preds/${data.seq}
   shots: ${data.root}/slahmr/phalp_out/shot_idcs/${data.seq}.json
   crossview: ${data.root}/slahmr/phalp_out
-
-
 ## GAROT Implemenation
-multi_view: True
-multi_view_num: 3
-cv_duration: 24
-cv_starting_frame: 25
-run_pnp: False
-max_iou_threshold: 0.4
+
