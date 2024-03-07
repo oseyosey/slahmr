@@ -29,8 +29,8 @@ sources:
 
 ## GAROT Implemenation
 multi_view: True
-multi_view_num: 2
+multi_view_num: 1
 cv_duration: 24
 cv_starting_frame: 0
-run_pnp: True
+run_pnp: False
 max_iou_threshold: 0.4

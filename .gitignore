@@ -149,3 +149,15 @@ Experiments/
 Experiments/panoptic-toolbox
 .gitignore
 Experiments/panoptic-toolbox
+slahmr/confs/config_mv.yaml
+slahmr/confs/optim_mv.yaml
+slahmr/confs/optim.yaml
+slahmr/confs/data/images_build1.yaml
+slahmr/confs/data/images_mv_quadra.yaml
+slahmr/confs/data/images_mv_single_office.yaml
+slahmr/confs/data/images_mv_single.yaml
+slahmr/confs/data/images_quadra0.yaml
+slahmr/confs/data/images_single_office0.yaml
+slahmr/confs/data/images_single_office1.yaml
+slahmr/confs/data/images_single1.yaml
+Experiments/panoptic-toolbox

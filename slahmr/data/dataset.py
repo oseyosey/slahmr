@@ -38,7 +38,7 @@ def get_dataset_from_cfg(cfg):
 
     args.sources = expand_source_paths(args.sources)
     print("DATA SOURCES", args.sources)
-    check_data_sources(args)
+    check_data_sources(args) #* Launch PHALP(Tracking) *#
     return MultiPeopleDataset(
         args.sources,
         args.seq,
@@ -77,6 +77,7 @@ def check_cross_view(cfg):
         args.sources.cameras = ""
 
     args.sources = expand_source_paths(args.sources)
+    ##* preprocess_crossview run PHALP across multiple views *##
     cv_data_path = preprocess_crossview(args.sources.images, args.sources.tracks, args.sources.shots, args.multi_view_num, duration=args.cv_duration)
 
     return cv_data_path
@@ -198,7 +199,7 @@ class MultiPeopleDataset(Dataset):
             "init_root_orient": [],
             "init_trans": [],
             "init_appe": [], ## added appearance
-            "joints3d": [], ## added joints3d
+            "joints3d": [], ## added joints3d from phalp
         }
 
         # create batches of sequences

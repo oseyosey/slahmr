@@ -191,7 +191,6 @@ class StageOptimizerMV(object):
 
         res_dict = detach_all(pred_dict["world"])
 
-
         # breakpoint()
 
         ## * Recreating vis_mask and track_id ##
@@ -209,7 +208,7 @@ class StageOptimizerMV(object):
                 track_id_world,
                 self.model.body_model, #? I think here model.body_model is already being updated with latest batch size
                 num_view,
-                floor_plane=obs_data["floor_plane"][0],
+                floor_plane=obs_data["floor_plane"][0], ##TODO: Potential problem? 
             ),
             "cpu",
         )
@@ -322,6 +321,7 @@ class StageOptimizerMV(object):
             # termination for middle chunks
             loss_change = self.prev_loss - self.cur_loss
             if self.last_updated == i - 1 and loss_change == 0:
+                print("EARLY BREAK DUE TO LACK OF LOSS CHANGE")
                 break
             if (
                 (self.cur_loss < 0 and loss_change < 100)
@@ -342,7 +342,6 @@ class StageOptimizerMV(object):
 
     def optim_step(self, obs_data_multi, writer=None):
         def closure():
-            # breakpoint()
             self.optim.zero_grad()
             loss, stats_dict, preds = self.forward_pass(obs_data_multi) ## Here it's calling the def forward_pass() function in RootOptimizerMV / SMPLOptimizer / MotionOptimizer
             stats_dict["total"] = loss
@@ -581,12 +580,13 @@ class MotionOptimizerMV(StageOptimizerMV):
 
         if self.opt_cams:
             Logger.log(f"{self.name} OPTIMIZING CAMERAS")
-            param_names += ["delta_cam_R", "cam_f"] ## if opt_cams, ["delta_cam_R", "cam_f"] will be improved.
+            param_names += ["delta_cam_R", "cam_f"] ## if opt_cams, ["delta_cam_R", "cam_f"] will be optimized.
         
         if model.opt_cams_mv:
             Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS ROTATION AND TRANSLATION")
             for i in range(1, num_views):
                 param_names += [f"cam_R_{i}", f"cam_t_{i}"]
+        
         if model.opt_focal_mv:
             Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS FOCAL LENGTH")
             for i in range(1, num_views):
@@ -630,41 +630,52 @@ class MotionOptimizerMV(StageOptimizerMV):
         param_dict = p.get_vars(param_names)
         param_dict["floor_plane"] = p.floor_plane[p.floor_idcs]
         
-
         preds, world_preds = self.model.rollout_smpl_steps(num_steps)
-        preds.update(param_dict)
-        world_preds.update(param_dict)
+        preds.update(param_dict) # in camera coordinate frame (under each view)
+        world_preds.update(param_dict) # canonical prior coordinate frame (under each view)
+
+        #? Check: preds and world preds should be the same consider static view (no camera motion)
 
         # track mask is the length of the sequence that contains num_steps of each track
         track_mask = world_preds.get("track_mask", None)
-
-        T = track_mask.shape[1] if track_mask is not None else num_steps
-        world_preds["cameras"] = p.get_cameras(np.arange(T))
+        T = track_mask.shape[1] if track_mask is not None else num_steps # T being the chunk size
+        world_preds["cameras"] = p.get_cameras(np.arange(T)) #? Could this be an issue? Why would world_preds have cameras?
 
         #* Test: put cameras in preds *#
-        # preds["cameras"] = p.get_cameras(np.arange(T))
-        # preds["cameras_multi_mv"] = p.get_cameras_mv()
+        preds["cameras"] = p.get_cameras(np.arange(T))
+        preds["cameras_multi_mv"] = p.get_cameras_mv(np.arange(T)) #probably needed to be slice as well. 
 
-
+        # Slice track masks across all views
         ##TODO Update: Track mask is vis_mask but cut in chunks. (Batch_size, T_subset) ##
-        track_mask_multi = []
+        track_mask_multi_sliced = []
         for num_view in range(self.num_views):
-            track_mask_multi.append(track_mask) #! Problem! 
+            track_mask_multi_sliced.append(track_mask)
+
+        #* option? using vis mask as track mask *#
+        vis_mask_multi = []
+        for num_view in range(self.num_views):
+            vis_mask = obs_data_list[num_view]["vis_mask"] >= 0
+            vis_mask_multi.append(vis_mask[:, :T])
+        if not vis_mask_multi:
+            vis_mask_multi = None
     
+        # Slice camera paramter
         if self.opt_cams: ## ? GAROT will not optimize camera?
             cam_R, cam_t = p.get_extrinsics()
             world_preds["cam_R"], world_preds["cam_t"] = cam_R[:T], cam_t[:T]
-            #preds["cam_R"], preds["cam_t"] = cam_R[:T], cam_t[:T]
             
-
-        # ? why do we need to slice the obs_data_list? 
+        # Slice observation data across all views
+        # ? why do we need to slice the obs_data_list: because we will be optimizing in chunks ? #
         obs_data_list_sliced = []
         for obs_data in obs_data_list:
-            obs_data_sliced = slice_dict(obs_data, 0, T)
+            obs_data_sliced = slice_obs_data_dict(obs_data, 0, T)
             obs_data_list_sliced.append(obs_data_sliced)
 
+        # slicing matching_obs_data?
 
-        motion_scale = self.get_motion_scale()
+        motion_scale = self.get_motion_scale() # Constant varied depending on the chunk size.
+
+        ## TODO: Implement the multi-view version (require world to camera transformation.)
         loss, stats_dict = self.loss(
             obs_data_list_sliced,
             preds,
@@ -672,19 +683,26 @@ class MotionOptimizerMV(StageOptimizerMV):
             self.model.seq_len,
             self.matching_obs_data,
             self.num_views,
-            valid_mask_multi=track_mask_multi, #* Currently unused
+            valid_mask_multi=track_mask_multi_sliced, #* Currently unused
             init_motion_scale=motion_scale,
         )
         return loss, stats_dict, (preds, world_preds)
 
 
-def slice_dict(d, start, end):
-    out = d.copy()
-    for k, v in d.items():
-        if not isinstance(v, torch.Tensor) or v.ndim < 3 or v.shape[1] < end:
-            continue
-        out[k] = v[:, start:end]
-    return out
+def slice_obs_data_dict(obs_data, start, end):
+    obs_data_sliced = obs_data.copy()
+    obs_data_sliced['joints2d'] = obs_data['joints2d'][:, start:end]
+    obs_data_sliced['init_body_pose'] = obs_data['init_body_pose'][:, start:end]
+    obs_data_sliced['init_root_orient'] = obs_data['init_root_orient'][:, start:end]
+    obs_data_sliced['floor_plane'] = obs_data['floor_plane']
+    obs_data_sliced['vis_mask'] = obs_data['vis_mask'][:, start:end]
+    obs_data_sliced['seq_interval'] = obs_data['seq_interval']
+    obs_data_sliced['track_interval'] = obs_data['track_interval']
+    obs_data_sliced['track_id'] = obs_data['track_id']
+    obs_data_sliced['seq_name'] = obs_data['seq_name']
+    obs_data_sliced['init_appe'] = obs_data['init_appe'][:, start:end]
+    obs_data_sliced['joints3d'] = obs_data['joints3d'][:, start:end]
+    return obs_data_sliced
 
 
 class MotionOptimizerChunksMV(MotionOptimizerMV):
@@ -757,5 +775,5 @@ class MotionOptimizerFreezeMV(MotionOptimizerMV):
         if model.optim_scale:
             param_names += ["world_scale"]
 
-        StageOptimizer.__init__(self, self.name, model, param_names, **kwargs)
+        StageOptimizerMV.__init__(self, self.name, model, param_names, **kwargs)
         self.set_loss(model, loss_weights, **kwargs)

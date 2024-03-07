@@ -202,6 +202,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
 
     if debug:
         breakpoint()
+    
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 3...")
     # now optimize motion model
     Logger.log(f"Loading motion prior from {paths.humor}")
@@ -212,7 +213,6 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
 
     Logger.log(f"Loading GMM motion prior from {paths.init_motion_prior}")
     init_motion_prior = load_gmm(paths.init_motion_prior, device=device)
-
 
     model = MovingSceneModelMV(
         B_stitch,     ## Here B should be the stitched number of sequences
@@ -234,17 +234,44 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
 
     # initialize motion model with base model predictions
     base_params = base_model.params.get_dict() #* dict_keys(['latent_pose', 'betas', 'root_orient', 'trans']). 
-                                            #* up until now the dimension looks lokay.
+                                               #* up until now the dimension looks lokay.
                                     
     model.initialize(obs_data_multi, cam_data, rt_pairs_tensor, base_params, cfg.fps) ##GAROT Implementation
     model.to(device)
 
 
+    # if "motion_chunks" in cfg.optim:
+    #     args = cfg.optim.motion_chunks
+    #     args["chunk_steps"] = args["chunk_steps"] * cfg.data.multi_view_num * 2
+    #     optim = MotionOptimizerChunksMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
+    #     #optim = MotionOptimizerMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
+    #     #num_iters = 20
+    #     optim.run(obs_data_multi, optim.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer) # hardcoded
+
+    ##* DEBUG: Using old Motion Optimizer. **#
+    
+    model = MovingSceneModel(
+        B,
+        T,
+        body_model_multi[0],
+        pose_prior,
+        motion_prior,
+        init_motion_prior,
+        fit_gender=fit_gender,
+        **margs,
+    ).to(device)
+
+    # initialize motion model with base model predictions
+    base_params = base_model.params.get_dict()
+    model.initialize(obs_data_multi[0], cam_data, base_params, cfg.fps)
+    model.to(device)
+
     if "motion_chunks" in cfg.optim:
+        print("RUNNING ORIGINAL MOTION CHUNKS OPTIMIZATION")
         args = cfg.optim.motion_chunks
-        args["chunk_steps"] = args["chunk_steps"] * cfg.data.multi_view_num * 2
-        optim = MotionOptimizerChunksMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
-        optim.run(obs_data_multi, optim.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer)
+        optim = MotionOptimizerChunks(model, stage_loss_weights, **args, **opts)
+        optim.run(obs_data_multi[0], optim.num_iters, out_dir, vis, writer)
+
 
     return 
 
@@ -411,11 +438,11 @@ def main(cfg: DictConfig):
     ### First-stage ###
     # 1. Run phalp for all views
     # 2. Obtain GaROT cross-view matching
-    # 3. Obtain SLAHMR for the first view
+    # 3. Obtain SLAHMR for the first view 
+    #TODO: adaptively select the best view (view 1 might not be the best view)
     # 4. Solve for PnP to obtain camera pose (R, T)
 
-
-    ## Create a list of omegaConf Dict for Multi-view ##
+    ## Create a list of OmegaConf Dict for Multi-view ##
     cfg_multi = []
     cfg_multi.append(cfg)
     for num_view in range(1, cfg.data.multi_view_num):
@@ -437,7 +464,7 @@ def main(cfg: DictConfig):
         out_dir_muli.append(out_dir_new)
 
 
-    ## Run PHALP for each view ## 
+    ## Run PHALP(Tracking) for each view ## 
     dataset_multi = []
     for num_view in range(cfg.data.multi_view_num):     
         if not os.path.exists(f"{out_dir_muli[num_view]}"):
@@ -509,7 +536,7 @@ def main(cfg: DictConfig):
 
 
     ## Setting up paths for obtaining SLAHMR results ##
-    slahmr_data_init_path = f"{out_dir_muli[0]}/motion_chunks/" 
+    slahmr_data_init_path = f"{out_dir_muli[0]}/motion_chunks_old/" 
     slahmr_data_init_dict = get_highest_motion_data(slahmr_data_init_path)
     slahmr_data_init_dict = {k: torch.from_numpy(v) for k, v in slahmr_data_init_dict.items()}
     slahmr_data_init_dict = move_to(slahmr_data_init_dict, device)

@@ -20,14 +20,14 @@ optim:
     opt_scale: False
     num_iters: 60
 
-  d:
+  motion_chunks:
     chunk_size: 10
     init_steps: 20
     chunk_steps: 20
     opt_cams: True
 
   loss_weights:
-    joints2d: [0.001, 0.001, 0.001]
+    joints2d: [0.0001, 0.0001, 0.0001]
     bg2d: [0.0, 0.000, 0.000]
     cam_R_smooth : [0.0, 0.0, 0.0]
     cam_t_smooth : [0.0, 0.0, 0.0]

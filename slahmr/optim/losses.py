@@ -227,6 +227,8 @@ class MotionLoss(SMPLLoss):
         loss rather than standard normal if given.
         """
         cam_pred_data["latent_pose"] = pred_data["latent_pose"]
+
+        #* Here it returns the SMPL loss
         loss, stats_dict = super().forward(
             observed_data, cam_pred_data, nsteps, valid_mask=valid_mask
         )
@@ -270,7 +272,7 @@ class MotionLoss(SMPLLoss):
             )  # must scale since doesn't scale with more steps
             stats_dict["init_motion_prior"] = cur_loss
 
-        #TODO: 45 Joints and 25 Joints OP issue.
+        #TODO: 45 Joints and 22 Joints OP issue.
         # make sure joints consistent between SMPL and direct motion prior output
         if (
             "joints3d_rollout" in pred_data

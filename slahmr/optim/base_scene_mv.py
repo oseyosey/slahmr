@@ -873,7 +873,7 @@ class BaseSceneModelMV(nn.Module):
 
         smpl_out = run_smpl(body_model, trans, root_orient, body_pose, betas)
         joints3d, points3d = smpl_out["joints"], smpl_out["vertices"]
-
+        
         # select desired joints and vertices
         joints3d_body = joints3d[:, :, : len(SMPL_JOINTS), :]
         joints3d_op = joints3d[:, :, self.smpl2op_map, :]

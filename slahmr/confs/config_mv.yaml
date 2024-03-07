@@ -6,7 +6,7 @@ defaults:
 
 model:
   floor_type: "shared"
-  est_floor: False # True
+  est_floor: True # True
   use_init: True
   opt_cams: True #* We want to optimize for the camera for view 0 as well
   opt_scale: True

@@ -60,7 +60,7 @@ class MovingSceneModelMV(BaseSceneModelMV):
         fit_gender="neutral",
         use_init=False,
         opt_cams=True,
-        opt_scale=True,
+        opt_scale=False,
         cam_graph=False,
         est_floor=True,
         floor_type="shared",
@@ -90,8 +90,8 @@ class MovingSceneModelMV(BaseSceneModelMV):
             pairing_info=pairing_info,
             path_body_model=path_body_model,
             opt_scale_mv=False,
-            opt_cams_mv=True,
-            opt_focal_mv=True,
+            opt_cams_mv=False,
+            opt_focal_mv=False,
         )
         assert motion_prior is not None
         assert motion_prior.model_data_config in [
@@ -140,7 +140,6 @@ class MovingSceneModelMV(BaseSceneModelMV):
             opt_focal=self.opt_cams,
             **param_dict,
         )
-
         
         #* initialize multi-view cameras *#
         #* We want to initialized with the output from the previous optimization *#
@@ -154,9 +153,13 @@ class MovingSceneModelMV(BaseSceneModelMV):
             **param_dict
         ) 
 
-
-        init_view = 0 ## hardcoded for now, we might be able to init floor with multi view
+        init_view = 0 # (TODO) hardcoded for now, we might be able to init floor with multi view. 
         self.init_floor(obs_data_list[init_view], param_dict)
+
+         #* initialize multi-view view latent-motion *#
+        ##TODO: init_first_state should initialize EVERY VIEW instead of with one init_view.
+        #self.init_first_state_mv(obs_data_list, param_dict, data_fps)
+
         self.init_first_state(obs_data_list[init_view], param_dict, data_fps) ## This might be a potential problem, loss of information.
 
     def init_floor(self, obs_data, param_dict):
@@ -177,6 +180,7 @@ class MovingSceneModelMV(BaseSceneModelMV):
             if self.group_floor and not self.est_floor:
                 # don't use the estimated floor as initial plane
                 floor_plane = obs_data["floor_plane"][: len(floor_plane)]
+        #* Initiliaize the floor plane with SLAHMR estimation on the initial view *#
         else:  # fixed shared or separate floors
             num_floors = 1 if self.shared_floor else self.batch_size
             floor_plane = obs_data["floor_plane"][:num_floors] #* This is the floor plane from the SLAHMR results #*
@@ -195,6 +199,58 @@ class MovingSceneModelMV(BaseSceneModelMV):
         self.params.set_param(
             "floor_idcs", floor_idcs.long().detach(), requires_grad=False
         )
+
+    def init_first_state_mv(self, obs_data_list, param_dict, data_fps):
+        """
+        initialize the latent motion and first state of each track for every view
+        using per-frame trajectories (world to camera transformed) of trans, rot, latent_pose, betas
+        and corresponding observed data.
+        """
+
+        B, T = self.batch_size, self.seq_len
+        param_dict = detach_all(param_dict)
+
+        # select the valid segments of each track; pad the shorter tracks with final element
+        if self.async_tracks and "track_interval" in obs_data_list[0]:
+            print("asynchronous tracks")
+            interval = obs_data_list[0]["track_interval"]  # (B, 2)
+            start, end = interval[:, 0], interval[:, 1] ## Essentially just index
+            self.track_start, self.track_end = start, end
+            param_dict = select_dict_segments(
+                param_dict, start, end, names=["trans", "root_orient", "latent_pose"]
+            )
+
+        ## These are the params at the shared world coordinate frame.
+        trans = param_dict["trans"]  # (B, T, 3)
+        root_orient = param_dict["root_orient"]  # (B, T, 3)
+        latent_pose = param_dict["latent_pose"]  # (B, T, D)
+        betas = param_dict["betas"]  # (B, b)
+
+        Logger.log(f"SEL TRACKS {trans.shape}, {root_orient.shape}")
+
+        # save each track's first appearance
+        self.params.set_param("trans", trans[:, :1])
+        Logger.log(f"INITIAL TRANS {trans[:, :1].detach().cpu()}")
+        self.params.set_param("root_orient", root_orient[:, :1])
+        self.params.set_param("latent_pose", latent_pose[:, :1])
+        self.params.set_param("betas", betas)
+
+        # pass the current pose estimates through the motion prior
+        self.data_fps = data_fps
+        body_pose = self.latent2pose(latent_pose)
+        init_latent = self.infer_latent_motion(
+            trans, root_orient, body_pose, betas, data_fps
+        ).detach()  # (B, T-1, D)
+        self.params.set_param("latent_motion", init_latent)
+
+        # estimate velocities in prior frame and save initial state
+        trans_vel, joints_vel, root_orient_vel = self.estimate_prior_velocities(
+            trans, root_orient, body_pose, betas, data_fps
+        )
+        self.params.set_param("trans_vel", trans_vel[:, :1].detach())
+        self.params.set_param("joints_vel", joints_vel[:, :1].detach())
+        self.params.set_param("root_orient_vel", root_orient_vel[:, :1].detach())
+
 
     def init_first_state(self, obs_data, param_dict, data_fps):
         """
@@ -509,7 +565,7 @@ class MovingSceneModelMV(BaseSceneModelMV):
         canonicalize_input=False,
     ):
         """
-        From the stored initial state, rolls out a sequence from the latent_motion vector
+        From the stored initial state, rolls out a sequence from the latent_motion vector.
         NOTE: the stored initial states are not at the same time step, but we return all
         predicted sequences starting from time 0.
 
@@ -517,7 +573,7 @@ class MovingSceneModelMV(BaseSceneModelMV):
         using the mean of the prior rather than random samples.
 
         If canonicalize_input is True, transform the initial state into the local canonical
-        frame before roll out
+        frame before roll out.
         """
         # get the first frame state
         # NOTE: first states do not occur at same time step

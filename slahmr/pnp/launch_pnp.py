@@ -41,7 +41,7 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device,
 
 
     ## Load 3D keypoints for SLAHMR (single vieww)
-    keypoints_3d_motion_path = f"{keypoints_3d_path}/motion_chunks/" 
+    keypoints_3d_motion_path = f"{keypoints_3d_path}/motion_chunks_old/" 
     data_dict_slahmr_world = get_highest_motion_data(keypoints_3d_motion_path)
     smpl_data_world = transform_smpl_paramas(data_dict_slahmr_world, device)
     joints_3d_data_all_frames = []

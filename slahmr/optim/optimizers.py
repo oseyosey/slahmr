@@ -223,10 +223,13 @@ class StageOptimizer(object):
             plt.boxplot(loss_vals, labels=times, showfliers=False)
             plt.savefig(f"{res_dir}/{loss_name}.png")
 
-    def run(self, obs_data, num_iters, out_dir, vis=None, writer=None):
+    def run(self, obs_data, num_iters, out_dir, vis=None, writer=None, out_dir_name_custom=None):
         self.cur_step = 0
         self.loss.cur_step = 0
-        res_dir = os.path.join(out_dir, self.name)
+        if out_dir_name_custom is not None:
+            res_dir = os.path.join(out_dir, out_dir_name_custom)
+        else:
+            res_dir = os.path.join(out_dir, self.name)
         os.makedirs(res_dir, exist_ok=True)
         seq_name = obs_data["seq_name"][0]
         print("SEQ NAME", seq_name)

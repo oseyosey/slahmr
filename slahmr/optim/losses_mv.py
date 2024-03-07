@@ -58,10 +58,11 @@ class RootLossMV(StageLossMV):
         stats_dict = dict()
         loss = 0.0
 
+        B, T, _, _ = pred_data["joints3d"].shape
+
         observed_data_init = observed_data_list[0]
 
-        ##TODO We will be feeding into observed_data_multi, lists of observed_data for each view. ##
-        # 2D re-projection loss
+        #* 2D re-projection loss
         if (
             "joints2d" in observed_data_init
             and "joints3d_op" in pred_data
@@ -88,6 +89,11 @@ class RootLossMV(StageLossMV):
                     for world_index, camera_data_list in matching_obs_data_per_view.items():
                         for camera_data in camera_data_list:
                             camera_index, first_appe_t, last_appe_t = camera_data
+
+                            #* adapting to the chunk size of the observed data *#
+                            last_appe_t = T if last_appe_t > T else last_appe_t
+                            first_appe_t = (T+1) if first_appe_t > T else first_appe_t
+
                             pred_joints2d_select[camera_index, first_appe_t:last_appe_t+1] = pred_joints2d[world_index, first_appe_t:last_appe_t+1]
                     
                     if valid_mask_multi is not None:
@@ -98,7 +104,9 @@ class RootLossMV(StageLossMV):
                         cur_loss = self.joints2d_loss(
                             observed_data["joints2d"], pred_joints2d_select
                         )
+                    cur_loss_mv += cur_loss
                 else:
+                    continue
                     observed_data = observed_data_list[num_view]
                     matching_obs_data_per_view = matching_obs_data[num_view]
 
@@ -115,7 +123,6 @@ class RootLossMV(StageLossMV):
                         cam_t = cam_t[:, :T_world, :]
                         cam_f = cam_f[:T_world, :]
                         cam_center = cam_center[:T_world, :]
-
 
                     #? I don't think we need to do that, becuase in get_cameras_mv it already calls the batch_size_world ?#
                     # cam_R = cam_R.repeat(batch_size_world, 1, 1, 1) ##TODO (Solved): Adapt to Batch size
@@ -135,6 +142,11 @@ class RootLossMV(StageLossMV):
                     for world_index, camera_data_list in matching_obs_data_per_view.items():
                         for camera_data in camera_data_list:
                             camera_index, first_appe_t, last_appe_t = camera_data
+
+                            #* adapting to the chunk size of the observed data *#
+                            last_appe_t = T if last_appe_t > T else last_appe_t
+                            first_appe_t = (T+1) if first_appe_t > T else first_appe_t
+
                             pred_joints2d_select[camera_index, first_appe_t:last_appe_t+1] = pred_joints2d[world_index, first_appe_t:last_appe_t+1]
 
                     if valid_mask_multi is not None:
@@ -146,40 +158,46 @@ class RootLossMV(StageLossMV):
                             observed_data["joints2d"], pred_joints2d_select
                         )
 
-                cur_loss_mv += cur_loss
+                # cur_loss_mv += cur_loss
             loss += self.loss_weights["joints2d"] * cur_loss_mv
             stats_dict["joints2d"] = cur_loss_mv
 
-
-        # smooth 3d joint motion
+        #* smooth 3D joint motion
         if self.loss_weights["joints3d_smooth"] > 0.0:
      
             cur_loss_mv = 0.0
             for num_view in range(num_views):
+                ## TODO: To debug
+                if num_view == 0:
+                    # continue
+                    ## * select the pred_data (to match with our observed_data) ##
+                    pred_joints3d_select = torch.zeros((observed_data_list[num_view]['joints2d'].shape[0],) + (pred_data["joints3d"].shape[1], pred_data["joints3d"].shape[2], pred_data["joints3d"].shape[3])) # * Match the dimension
+                    
+                    matching_obs_data_per_view = matching_obs_data[num_view] 
+                    for world_index, camera_data_list in matching_obs_data_per_view.items():
+                        for camera_data in camera_data_list:
+                            camera_index, first_appe_t, last_appe_t = camera_data
 
-                ## * select the pred_data (to match with our observed_data) ##
-                pred_joints3d_select = torch.zeros((observed_data_list[num_view]['joints2d'].shape[0],) + (pred_data["joints3d"].shape[1], pred_data["joints3d"].shape[2], pred_data["joints3d"].shape[3])) # * Match the dimension
-                
-                matching_obs_data_per_view = matching_obs_data[num_view] 
-                for world_index, camera_data_list in matching_obs_data_per_view.items():
-                    for camera_data in camera_data_list:
-                        camera_index, first_appe_t, last_appe_t = camera_data
-                        pred_joints3d_select[camera_index, first_appe_t:last_appe_t+1] = pred_data["joints3d"][world_index, first_appe_t:last_appe_t+1]
-                
+                            #* adapting to the chunk size of the observed data *#
+                            last_appe_t = T if last_appe_t > T else last_appe_t
+                            first_appe_t = (T+1) if first_appe_t > T else first_appe_t
 
-                device = pred_data["joints3d"].device
-                pred_joints3d_select = pred_joints3d_select.to(device)
+                            pred_joints3d_select[camera_index, first_appe_t:last_appe_t+1] = pred_data["joints3d"][world_index, first_appe_t:last_appe_t+1]
+                    
 
-                if valid_mask_multi is not None:
-                    cur_loss = joints3d_smooth_loss(
-                        pred_joints3d_select, valid_mask_multi[num_view]
-                    )
-                else:
-                    cur_loss = joints3d_smooth_loss(
-                        pred_joints3d_select
-                    )    
+                    device = pred_data["joints3d"].device
+                    pred_joints3d_select = pred_joints3d_select.to(device)
 
-                cur_loss_mv += cur_loss
+                    if valid_mask_multi is not None:
+                        cur_loss = joints3d_smooth_loss(
+                            pred_joints3d_select, valid_mask_multi[num_view]
+                        )
+                    else:
+                        cur_loss = joints3d_smooth_loss(
+                            pred_joints3d_select
+                        )    
+
+                    cur_loss_mv += cur_loss
             loss += self.loss_weights["joints3d_smooth"] * cur_loss_mv
             stats_dict["joints3d_smooth"] = cur_loss_mv
 
@@ -217,8 +235,6 @@ def camera_smoothness_loss(R1, t1, R2, t2):
 Losses are cumulative
 SMPLLoss setup is same as RootLoss
 """
-
-
 class SMPLLossMV(RootLossMV):
     def forward(self, observed_data_list, pred_data, nsteps, matching_obs_data, num_views, valid_mask_multi=None):
         """
@@ -228,30 +244,39 @@ class SMPLLossMV(RootLossMV):
         loss, stats_dict = super().forward(
             observed_data_list, pred_data, matching_obs_data, num_views, valid_mask_multi
         )
+        
+        B, T, _, _ = pred_data["joints3d"].shape
 
         # prior to keep latent pose likely
         ## GAROT Implementation
         if "latent_pose" in pred_data and self.loss_weights["pose_prior"] > 0.0:
             cur_loss_mv = 0.0
             for num_view in range(num_views):
-                observed_data = observed_data_list[num_view]
-                # * Select latent pose corresponding to the observed data# 
-                batch_size_obs = observed_data["joints2d"].shape[0] 
-                device = observed_data["joints2d"].get_device()
-                pred_latent_pose_select = torch.zeros(batch_size_obs, *pred_data["latent_pose"].shape[1:]).to(device)
+                ## TODO: To debug
+                if num_view == 0:
+                    observed_data = observed_data_list[num_view]
+                    #* Select latent pose corresponding to the observed data *# 
+                    batch_size_obs = observed_data["joints2d"].shape[0] 
+                    device = observed_data["joints2d"].get_device()
+                    pred_latent_pose_select = torch.zeros(batch_size_obs, *pred_data["latent_pose"].shape[1:]).to(device)
 
-                matching_obs_data_per_view = matching_obs_data[num_view]
-                for world_index, camera_data_list in matching_obs_data_per_view.items():
-                    for camera_data in camera_data_list:
-                        camera_index, first_appe_t, last_appe_t = camera_data
-                        pred_latent_pose_select[camera_index, first_appe_t:last_appe_t+1] = pred_data["latent_pose"][world_index, first_appe_t:last_appe_t+1]
-                
-                if valid_mask_multi is not None:
-                    cur_loss = pose_prior_loss(pred_latent_pose_select, valid_mask_multi[num_view])
-                else:
-                    cur_loss = pose_prior_loss(pred_latent_pose_select)
-                    # ? Should i put a break, cur_loss will be added for a total number of view
-                cur_loss_mv += cur_loss
+                    matching_obs_data_per_view = matching_obs_data[num_view]
+                    for world_index, camera_data_list in matching_obs_data_per_view.items():
+                        for camera_data in camera_data_list:
+                            camera_index, first_appe_t, last_appe_t = camera_data
+
+                            #* adapting to the chunk size of the observed data *#
+                            last_appe_t = T if last_appe_t > T else last_appe_t
+                            first_appe_t = (T+1) if first_appe_t > T else first_appe_t
+
+                            pred_latent_pose_select[camera_index, first_appe_t:last_appe_t+1] = pred_data["latent_pose"][world_index, first_appe_t:last_appe_t+1]
+                    
+                    if valid_mask_multi is not None:
+                        cur_loss = pose_prior_loss(pred_latent_pose_select, valid_mask_multi[num_view])
+                    else:
+                        cur_loss = pose_prior_loss(pred_latent_pose_select)
+                        # ? Should i put a break, cur_loss will be added for a total number of view
+                    cur_loss_mv += cur_loss
 
             loss += self.loss_weights["pose_prior"] * cur_loss_mv
             stats_dict["pose_prior"] = cur_loss_mv
@@ -261,6 +286,20 @@ class SMPLLossMV(RootLossMV):
             cur_loss = shape_prior_loss(pred_data["betas"])
             loss += self.loss_weights["shape_prior"] * nsteps * cur_loss
             stats_dict["shape_prior"] = cur_loss
+
+
+        #TODO: camera smoothness add in as we are going to optimize for this as well. 
+        if "cam_R" in pred_data and self.loss_weights["cam_R_smooth"] > 0.0:
+            cam_R = pred_data["cam_R"]  # (T, 3, 3)
+            cur_loss = rotation_smoothness_loss(cam_R[1:], cam_R[:-1])
+            loss += self.loss_weights["cam_R_smooth"] * cur_loss
+            stats_dict["cam_R_smooth"] = cur_loss
+
+        if "cam_t" in pred_data and self.loss_weights["cam_t_smooth"] > 0.0:
+            cam_t = pred_data["cam_t"]  # (T, 3, 3)
+            cur_loss = translation_smoothness_loss(cam_t[1:], cam_t[:-1])
+            loss += self.loss_weights["cam_t_smooth"] * cur_loss
+            stats_dict["cam_t_smooth"] = cur_loss
 
         return loss, stats_dict
 
@@ -287,9 +326,9 @@ class MotionLossMV(SMPLLossMV):
         pred_data,
         cam_pred_data,
         nsteps,
-        matching_obs_data,
+        matching_obs_data, #TODO: figure out if this needs to be sliced. 
         num_views,
-        valid_mask_multi=None, ##TODO
+        valid_mask_multi=None, 
         init_motion_scale=1.0,
     ):
         """
@@ -307,24 +346,25 @@ class MotionLossMV(SMPLLossMV):
         )
 
         #valid_mask = valid_mask_multi[0] #Could be none or could be a valid mask
-        valid_mask = None
+        #valid_mask = None
         
-
         # prior to keep latent motion likely
         if "latent_motion" in pred_data and self.loss_weights["motion_prior"] > 0.0:
             # NOTE: latent is NOT synchronized in time,
             # the mask is NOT relevant
             # Generate the async mask to properly mask motion prior loss
             # Helps to calibrate the range of 'good' loss values
+
             B, T, _ = pred_data["latent_motion"].shape
             device = pred_data["latent_motion"].device
-            if valid_mask is not None:
+            if valid_mask_multi is not None:
                 async_mask = (
                     torch.arange(T, device=device)[None].expand(B, -1)
-                    < valid_mask.sum(dim=1)[:, None]
+                    < valid_mask_multi[0].sum(dim=1)[:, None]
                 )
             else:
                 async_mask = None
+
             cur_loss = motion_prior_loss(
                 pred_data["latent_motion"],
                 cond_prior=pred_data.get("cond_prior", None),
@@ -358,33 +398,95 @@ class MotionLossMV(SMPLLossMV):
             and "joints3d" in pred_data
             and self.loss_weights["joint_consistency"] > 0.0
         ):
-            cur_loss = joint_consistency_loss(
-                pred_data["joints3d"],
-                pred_data["joints3d_rollout"],
-                valid_mask,
-            )
-            loss += self.loss_weights["joint_consistency"] * cur_loss
-            stats_dict["joint_consistency"] = cur_loss
+            cur_loss_mv = 0.0
+            if not valid_mask_multi:
+                for num_view in range(num_views):
+                    valid_mask = valid_mask_multi[num_view]
+                    cur_loss = joint_consistency_loss(
+                        pred_data["joints3d"],
+                        pred_data["joints3d_rollout"],
+                        valid_mask,
+                    )
+                cur_loss_mv += cur_loss
+            else:
+                for num_view in range(num_views):
+                    valid_mask = valid_mask_multi[num_view]
+                    cur_loss = joint_consistency_loss(
+                        pred_data["joints3d"],
+                        pred_data["joints3d_rollout"],
+                        None
+                    )
+                cur_loss_mv += cur_loss
+            loss += self.loss_weights["joint_consistency"] * cur_loss_mv
+            stats_dict["joint_consistency"] = cur_loss_mv
 
         # make sure bone lengths between frames of direct motion prior output are consistent
         if "joints3d_rollout" in pred_data and self.loss_weights["bone_length"] > 0.0:
-            cur_loss = bone_length_loss(pred_data["joints3d_rollout"], valid_mask)
-            loss += self.loss_weights["bone_length"] * cur_loss
-            stats_dict["bone_length"] = cur_loss
+            cur_loss_mv = 0.0
+            for num_view in range(num_views):
+                if not valid_mask_multi:
+                    valid_mask = valid_mask_multi[num_view]
+                    cur_loss = bone_length_loss(pred_data["joints3d_rollout"], valid_mask)
+                    cur_loss_mv += cur_loss
+                else:
+                    cur_loss = bone_length_loss(pred_data["joints3d_rollout"], None)
+                    cur_loss_mv += cur_loss
+            loss += self.loss_weights["bone_length"] * cur_loss_mv
+            stats_dict["bone_length"] = cur_loss_mv
 
 
         # make sure rolled out joints match observations too
-        breakpoint()
+        # TODO: Joints3d in observation is 45, needs to convert it back to 22 standard SMPL format. 
         if (
             "joints3d" in observed_data_list[0]
             and "joints3d_rollout" in pred_data
             and self.loss_weights["joints3d_rollout"] > 0.0
         ):
-        
             cur_loss_mv = 0.0
+            breakpoint()
             for num_view in range(num_views):
+                if num_view == 0:
+                    observed_data = observed_data_list[0]
+
+                    # No need to perform world to camera as view 1 is the world frame. 
+                    cam_R, cam_t, cam_f, cam_center = pred_data["cameras"]
+
+                    #* select the pred_data (to match with our observed_data) *#
+                    device = observed_data["joints3d"].get_device()
+                    pred_joints3d_select = torch.zeros(observed_data['joints3d'].size()[:-1] + (3,)).to(device)
+                    matching_obs_data_per_view = matching_obs_data[num_view]
+                    for world_index, camera_data_list in matching_obs_data_per_view.items():
+                        for camera_data in camera_data_list:
+                            camera_index, first_appe_t, last_appe_t = camera_data
+                            last_appe_t = T if last_appe_t > T else last_appe_t # don't want to overwrite 
+                            first_appe_t = (T+1) if first_appe_t > T else first_appe_t # don't want to overwrite
+                            pred_joints3d_select[camera_index, first_appe_t:last_appe_t+1] = pred_data["joints3d_rollout"][world_index, first_appe_t:last_appe_t+1]
+
+                    if valid_mask_multi is not None:
+                        cur_loss = joints3d_loss(
+                            observed_data["joints3d"], pred_data["joints3d_rollout"], valid_mask_multi[num_view]
+                        )
+                    else:
+                        cur_loss = joints3d_loss(
+                            observed_data["joints3d"], pred_data["joints3d_rollout"]
+                        )
+                else:
+                    continue
+
+
+            if not valid_mask_multi:
+                for num_view in range(num_views):
+                    valid_mask = valid_mask_multi[num_view]
+                    ##TODO: Transformed to the observed data coordinate frame into world frame
+                    breakpoint()
+
+                    cur_loss = joints3d_loss(
+                        observed_data_list[num_view]["joints3d"], pred_data["joints3d_rollout"], valid_mask
+                    )
+                    cur_loss_mv += cur_loss
+            else:
                 cur_loss = joints3d_loss(
-                    observed_data_list[num_view]["joints3d"], pred_data["joints3d_rollout"], valid_mask
+                    observed_data_list[0]["joints3d"], pred_data["joints3d_rollout"], None
                 )
                 cur_loss_mv += cur_loss
             loss += self.loss_weights["joints3d_rollout"] * cur_loss_mv
@@ -396,11 +498,21 @@ class MotionLossMV(SMPLLossMV):
             and "contacts_conf" in pred_data
             and "joints3d" in pred_data
         ):
-            cur_loss = contact_vel_loss(
-                pred_data["contacts_conf"], pred_data["joints3d"], valid_mask
-            )
-            loss += self.loss_weights["contact_vel"] * cur_loss
-            stats_dict["contact_vel"] = cur_loss
+            cur_loss_mv = 0.0
+            for num_view in range(num_views):
+                if not valid_mask_multi:
+                    valid_mask = valid_mask_multi[num_view]
+                    cur_loss = contact_vel_loss(
+                        pred_data["contacts_conf"], pred_data["joints3d"], valid_mask
+                    )
+                    cur_loss_mv += cur_loss
+                else:
+                    cur_loss = contact_vel_loss(
+                        pred_data["contacts_conf"], pred_data["joints3d"], None
+                    )
+                    cur_loss_mv += cur_loss
+            loss += self.loss_weights["contact_vel"] * cur_loss_mv
+            stats_dict["contact_vel"] = cur_loss_mv
 
         # contacting joints are near the floor
         if (
@@ -408,12 +520,21 @@ class MotionLossMV(SMPLLossMV):
             and "contacts_conf" in pred_data
             and "joints3d" in pred_data
         ):
-            cur_loss = contact_height_loss(
-                pred_data["contacts_conf"], pred_data["joints3d"], valid_mask
-            )
-            loss += self.loss_weights["contact_height"] * cur_loss
-            stats_dict["contact_height"] = cur_loss
-
+            cur_loss_mv = 0.0
+            for num_view in range(num_views):
+                if not valid_mask_multi:
+                    valid_mask = valid_mask_multi[num_view]
+                    cur_loss = contact_height_loss(
+                        pred_data["contacts_conf"], pred_data["joints3d"], valid_mask
+                    )
+                    cur_loss_mv += cur_loss
+                else:
+                    cur_loss = contact_height_loss(
+                        pred_data["contacts_conf"], pred_data["joints3d"], None
+                    )
+                    cur_loss_mv += cur_loss
+            loss += self.loss_weights["contact_height"] * cur_loss_mv
+            stats_dict["contact_height"] = cur_loss_mv
 
         # floor is close to the initialization
         if (
@@ -421,7 +542,7 @@ class MotionLossMV(SMPLLossMV):
             and "floor_plane" in pred_data
             and "floor_plane" in observed_data_list[0]
         ):
-        ##TODO (solved) figure out if we can do this for multi-view. NO need to loop through num_views (we are simply using the first view (SLAHMR) as Ground Plane)
+        ##TODO (solved) figure out if we can do this for multi-view. No need to loop through num_views (we are simply using the first view (SLAHMR) as Ground Plane).
             cur_loss = 0.0
             cur_loss = floor_reg_loss(
                     pred_data["floor_plane"], observed_data_list[0]["floor_plane"]
