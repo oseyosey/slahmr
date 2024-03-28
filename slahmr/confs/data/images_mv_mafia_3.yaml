@@ -29,7 +29,7 @@ sources:
 
 ## GAROT Implemenation
 multi_view: True
-multi_view_num: 3
+multi_view_num: 2
 cv_duration: 24
 cv_starting_frame: 0
 run_pnp: True

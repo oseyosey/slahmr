@@ -67,7 +67,7 @@ N_STAGES = 3
 
 
 ### GAROT Implementation ###
-def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cfg_multi, device, debug=True):
+def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cfg_multi, device, debug=False):
     args = cfg.data
 
     ## setting up psuedo B and T (B, the number of sequences will change.)

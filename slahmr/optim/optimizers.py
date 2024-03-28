@@ -526,7 +526,6 @@ class MotionOptimizer(StageOptimizer):
         return 1.0
 
     def forward_pass(self, obs_data, num_steps=-1):
-        breakpoint()
         p = self.model.params
         param_names = [
             "betas",

@@ -346,6 +346,9 @@ class MotionLossMV(SMPLLossMV):
             observed_data_list, cam_pred_data, nsteps, matching_obs_data, num_views, valid_mask_multi
         )
 
+        #* Multi-view camera and focal Optimization *#
+        
+
         #valid_mask = valid_mask_multi[0] #Could be none or could be a valid mask
         #valid_mask = None
         

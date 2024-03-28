@@ -430,7 +430,6 @@ def prepare_perspective_projection_data(joints_3d_world, data_dict_slahmr_world)
     # Convert the list of translations into a tensor of shape (bs, 3)
     translation_tensor = torch.stack([torch.tensor(item) for item in translation_list], dim=0)
 
-
     # Create the camera_center_tensor
     cx = data_dict_slahmr_world['intrins'][2]
     cy = data_dict_slahmr_world['intrins'][3]

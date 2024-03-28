@@ -648,7 +648,8 @@ class MotionOptimizerMV(StageOptimizerMV):
         # track mask is the length of the sequence that contains num_steps of each track
         track_mask = world_preds.get("track_mask", None)
         T = track_mask.shape[1] if track_mask is not None else num_steps # T being the chunk size
-        world_preds["cameras"] = p.get_cameras(np.arange(T)) #? Could this be an issue? Why would world_preds have cameras?
+        world_preds["cameras"] = p.get_cameras(np.arange(T)) #? Could this be an issue? Why would world_preds have cameras? Solved: yes! It need cameras in later loss *#
+        world_preds["cameras_multi_mv"] = p.get_cameras_mv(np.arange(T))
 
         #* Test: put cameras in preds *#
         preds["cameras"] = p.get_cameras(np.arange(T))
@@ -661,6 +662,7 @@ class MotionOptimizerMV(StageOptimizerMV):
             track_mask_multi_sliced.append(track_mask)
 
         #* option? using vis mask as track mask *#
+        # Update: not used. 
         vis_mask_multi = []
         for num_view in range(self.num_views):
             vis_mask = obs_data_list[num_view]["vis_mask"] >= 0
@@ -684,7 +686,6 @@ class MotionOptimizerMV(StageOptimizerMV):
 
         motion_scale = self.get_motion_scale() # Constant varied depending on the chunk size.
 
-        ## TODO: Implement the multi-view version (require world to camera transformation.)
         loss, stats_dict = self.loss(
             obs_data_list_sliced,
             preds,
