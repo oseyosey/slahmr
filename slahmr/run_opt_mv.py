@@ -531,6 +531,7 @@ def main(cfg: DictConfig):
     
 
     ## Run Multi-view PnP to obtain Camera Pose ##
+    ## TODO March 2024: Improve the Estimation Module.  
     rt_pairs = run_pnp(cfg, out_dir_muli, out_dir_muli[0], cv_data_path, device, starting_frame=cfg.data.cv_starting_frame, run_pnp=cfg.data.run_pnp, max_iou_threshold=cfg.data.max_iou_threshold)
     print("rt_pairs", rt_pairs)
 

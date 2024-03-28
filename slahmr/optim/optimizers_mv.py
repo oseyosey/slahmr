@@ -660,15 +660,6 @@ class MotionOptimizerMV(StageOptimizerMV):
         track_mask_multi_sliced = []
         for num_view in range(self.num_views):
             track_mask_multi_sliced.append(track_mask)
-
-        #* option? using vis mask as track mask *#
-        # Update: not used. 
-        vis_mask_multi = []
-        for num_view in range(self.num_views):
-            vis_mask = obs_data_list[num_view]["vis_mask"] >= 0
-            vis_mask_multi.append(vis_mask[:, :T])
-        if not vis_mask_multi:
-            vis_mask_multi = None
     
         # Slice camera paramter
         if self.opt_cams: ## ? GAROT will not optimize camera?

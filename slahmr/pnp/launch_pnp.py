@@ -88,6 +88,8 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device,
     cy = data_dict_slahmr_world['intrins'][3]
     camera_matrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
        
+
+    breakpoint()
     ## Matching 3D Keypoints with 2D Keypoints
     for num_view in range(1, cfg.data.multi_view_num):
         
@@ -112,16 +114,15 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device,
                     points_3D_world.append(joints_3d_data[pair[0]])
                     points_2D_camera.append(joints_2d_data[pair[1]])
 
-
+        breakpoint()
         points_3D_world = np.vstack(points_3D_world)
         points_2D_camera = np.vstack(points_2D_camera)
         
-        # breakpoint()
         print(f"RUNNING RANSAC PnP ROBUST on Camera {num_view}")
         n = int(len(points_3D_world) / (25*4))
 
         ## Need additional parameter finetuning
-        refined_pose = ransac_pnp_robust(points_3D_world, points_2D_camera, camera_matrix, n=n, k=5000, d=25 * (n/2), percentile=95, sample_ratio=0.8, verbose=False)
+        refined_pose = ransac_pnp_robust(points_3D_world, points_2D_camera, camera_matrix, n=n, k=5000, d=25 * (n/2), percentile=95, sample_ratio=0.8, verbose=True)
         rt_pairs.append(refined_pose)
 
     return rt_pairs
@@ -298,7 +299,7 @@ def ransac_pnp(points_3D, points_2D, camera_matrix, n=6, k=30, d=25*6, percentil
     return refined_model
 
 
-def ransac_pnp_robust(points_3D, points_2D, camera_matrix, n=6, k=30, d=25*6, percentile=95, sample_ratio=0.8, verbose = False):
+def ransac_pnp_robust(points_3D, points_2D, camera_matrix, n=6, k=30, d=25*6, percentile=95, sample_ratio=0.8, verbose = True):
     """
     points_3D: 3D Joints in world coordinate (25 * number_of_samples, 3)
     points_2D: 2D Joints in camera coordiante (25 * number_of_samples, 3)
@@ -365,10 +366,11 @@ def ransac_pnp_robust(points_3D, points_2D, camera_matrix, n=6, k=30, d=25*6, pe
         raise ValueError("RANSAC did not find a suitable fit.")
 
     # Model refinement using the inliers of the best model
+    #* Issue with model refinement, unsued for now*#
     _, rvec_refined, tvec_refined = cv2.solvePnP(np.array(points_3D_filtered)[best_inliers], np.array(points_2D_filtered)[best_inliers], camera_matrix, None)
     refined_model = (rvec_refined, tvec_refined)
     
-    return refined_model
+    return best_model
 
 
 
@@ -543,34 +545,75 @@ def joints_2d_to_bboxes(reprojected_points):
     return bounding_boxes
 
 
-def compute_iou(bbox1, bbox2):
+def calculate_iou(boxA, boxB):
     """
-    Compute the Intersection over Union (IoU) between two bounding boxes.
+    Calculate the Intersection over Union (IoU) of two bounding boxes.
+    
+    Parameters:
+    - boxA: The first bounding box as a tuple (x1, y1, x2, y2)
+    - boxB: The second bounding box as a tuple (x1, y1, x2, y2)
+    
+    Returns:
+    - The IoU between the two bounding boxes.
     """
-    # Convert bbox1 to (x_tl, y_tl, x_br, y_br) format if it's in (x_tl, y_tl, width, height) format
-    if 'width' in bbox1:
-        bbox1['x_bottom_right'] = bbox1['x_top_left'] + bbox1['width']
-        bbox1['y_bottom_right'] = bbox1['y_top_left'] + bbox1['height']
+    # Determine the coordinates of the intersection rectangle
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
 
-    # Convert bbox2 to (x_tl, y_tl, x_br, y_br) format if it's in (x_tl, y_tl, width, height) format
-    if 'width' in bbox2:
-        bbox2['x_bottom_right'] = bbox2['x_top_left'] + bbox2['width']
-        bbox2['y_bottom_right'] = bbox2['y_top_left'] + bbox2['height']
+    # Compute the area of intersection
+    intersection_area = max(0, xB - xA + 1) * max(0, yB - yA + 1)
 
-    xA = max(bbox1['x_top_left'], bbox2['x_top_left'])
-    yA = max(bbox1['y_top_left'], bbox2['y_top_left'])
-    xB = min(bbox1['x_bottom_right'], bbox2['x_bottom_right'])
-    yB = min(bbox1['y_bottom_right'], bbox2['y_bottom_right'])
-    
-    interArea = max(0, xB - xA) * max(0, yB - yA)
-    box1Area = (bbox1['x_bottom_right'] - bbox1['x_top_left']) * (bbox1['y_bottom_right'] - bbox1['y_top_left'])
-    box2Area = (bbox2['x_bottom_right'] - bbox2['x_top_left']) * (bbox2['y_bottom_right'] - bbox2['y_top_left'])
-    
-    iou = interArea / float(box1Area + box2Area - interArea)
+    # Compute the area of both the prediction and ground-truth rectangles
+    boxA_area = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+    boxB_area = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+
+    # Compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    iou = intersection_area / float(boxA_area + boxB_area - intersection_area)
+
     return iou
 
 
-def match_bboxes(reprojected_bboxes, cross_view_data, frame, camera, max_iou_threshold=0.4):
+def match_bboxes_reproject_crossview(reprojected_bboxes, cross_view_bboxes, min_iou_threshold=0.5):
+    """
+    Match bounding boxes with an optional minimum IoU threshold.
+    
+    Parameters:
+    - reprojected_bboxes: List of bounding boxes in the specified format.
+    - cross_view_bboxes: List of bounding boxes in the specified format.
+    - min_iou_threshold: The minimum IoU to consider a valid match.
+    
+    Returns:
+    - A list of tuples (index in reprojected_bboxes, index in cross_view_bboxes) of matches.
+    """
+    matches = []
+
+    for i, reprojected_bbox in enumerate(reprojected_bboxes):
+        reprojected_box = (reprojected_bbox['x_top_left'], reprojected_bbox['y_top_left'], reprojected_bbox['x_bottom_right'], reprojected_bbox['y_bottom_right'])
+        
+        best_iou = 0
+        best_match = -1
+        
+        for j, cross_view_bbox in enumerate(cross_view_bboxes):
+            cross_view_box = (cross_view_bbox['bbox']['x_top_left'], cross_view_bbox['bbox']['y_top_left'],
+                              cross_view_bbox['bbox']['x_top_left'] + cross_view_bbox['bbox']['width'],
+                              cross_view_bbox['bbox']['y_top_left'] + cross_view_bbox['bbox']['height'])
+            
+            iou = calculate_iou(reprojected_box, cross_view_box)
+            
+            if iou > best_iou and iou >= min_iou_threshold:
+                best_iou = iou
+                best_match = j
+        
+        if best_match != -1:
+            matches.append((i, best_match))
+    
+    return matches
+
+def match_bboxes(reprojected_bboxes, cross_view_data, frame, camera, max_iou_threshold=0.5):
     """
     Match subjects between reprojected bounding boxes and cross_view_data based on IoU.
     """
@@ -583,18 +626,7 @@ def match_bboxes(reprojected_bboxes, cross_view_data, frame, camera, max_iou_thr
                 cross_view_bboxes.append(bbox_info)
                 #print(cross_view_bboxes[-1])
     
-    matches = []
-    for i, rep_bbox in enumerate(reprojected_bboxes):
-        max_iou = 0
-        max_j = -1
-        for j, cross_view_bbox in enumerate(cross_view_bboxes):
-            iou = compute_iou(rep_bbox, cross_view_bbox['bbox'])
-            if iou > max_iou:
-                max_iou = iou
-                max_j = j
-        
-        if max_iou > max_iou_threshold:  # Threshold can be adjusted
-            matches.append((i, max_j))
+    matches = match_bboxes_reproject_crossview(reprojected_bboxes, cross_view_bboxes)
     
     ## matches return the indices of bboxes, and cross_view_bboxes
     return matches, cross_view_bboxes
@@ -609,7 +641,7 @@ def match_two_bbox_sets(bbox_projected_world, bbox_detected_camera, cross_view_d
     #print(matches_A)
     
     # Step 4b: Match Set B with cross_view_matching['cross_view_match']
-    matches_B, cross_view_bboxes = match_bboxes(bbox_detected_camera, cross_view_data, frame, camera2)
+    matches_B, _ = match_bboxes(bbox_detected_camera, cross_view_data, frame, camera2, max_iou_threshold=max_iou_threshold)
     #print(matches_B)
 
     # Step 4c: Use matched pairs A and B to establish the correspondence between Set A and Set B
@@ -621,6 +653,8 @@ def match_two_bbox_sets(bbox_projected_world, bbox_detected_camera, cross_view_d
 
 
     # print("Final Matches: ", final_matches)
+                
+    #* Final Matches seems to be correct *#
     
     ## Return the matches
     ## (match indices of setA_bboxes, match indices of setB_bboxes)
