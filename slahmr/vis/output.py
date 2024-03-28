@@ -165,7 +165,7 @@ def animate_scene(
         scene,
         seq_name,
         render_views=render_views,
-        render_cam=render_cam,
+        render_cam=False, #render_cam
         accumulate=accumulate,
         debug=debug,
     )

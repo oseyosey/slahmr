@@ -12,9 +12,13 @@ optim:
 
   root:
     num_iters: 30
+    opt_cams_mv: True
+    opt_focal_mv: False
 
   smpl:
-    num_iters: 0
+    num_iters: 30
+    opt_cams_mv: True
+    opt_focal_mv: False
 
   smooth:
     opt_scale: False
@@ -45,10 +49,10 @@ optim:
     # contact_vel: [0.0, 0.0, 200.0] #contact_vel: [0.0, 0.0, 100.0], Ground Contact Velocity Loss
     # contact_height: [0.0, 0.0, 20.0] #contact_height: [0.0, 0.0, 10.0]
     # floor_reg: [0.0, 0.0, 0.167]    #floor_reg: [0.0, 0.0, 0.167]
-    joints2d: [0.0001, 0.0001, 0.0001]
+    joints2d: [0.001, 0.001, 0.001]
     bg2d: [0.0, 0.000, 0.000]
-    cam_R_smooth : [0.0, 0.0, 0.0]
-    cam_t_smooth : [0.0, 0.0, 0.0]
+    cam_R_smooth : [0.0, 1000.0, 1000.0]
+    cam_t_smooth : [0.0, 1000.0, 1000.0]
       #    bg2d: [0.0, 0.0001, 0.0001]
       #    cam_R_smooth : [0.0, 1000.0, 1000.0]
       #    cam_t_smooth : [0.0, 1000.0, 1000.0]

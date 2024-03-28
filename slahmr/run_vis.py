@@ -177,6 +177,8 @@ def render_results(cfg, dataset, dev_id, res_dicts, out_names, **kwargs):
         fps=cfg.fps,
     )
 
+    # breakpoint()
+
     save_paths_all = []
     for res_dict, out_name in zip(res_dicts, out_names):
         res_dict = move_to(res_dict, device)

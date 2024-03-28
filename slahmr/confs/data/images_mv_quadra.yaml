@@ -32,5 +32,5 @@ multi_view: True
 multi_view_num: 1
 cv_duration: 24
 cv_starting_frame: 0
-run_pnp: False
+run_pnp: True
 max_iou_threshold: 0.4

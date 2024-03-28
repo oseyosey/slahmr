@@ -300,7 +300,6 @@ class MovingSceneModelMV(BaseSceneModelMV):
         self.params.set_param("trans_vel", trans_vel[:, :1].detach())
         self.params.set_param("joints_vel", joints_vel[:, :1].detach())
         self.params.set_param("root_orient_vel", root_orient_vel[:, :1].detach())
-        
 
     def get_optim_result(self, num_steps=-1):
         res = super().get_optim_result()

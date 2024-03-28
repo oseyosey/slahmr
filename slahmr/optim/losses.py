@@ -55,6 +55,7 @@ class RootLoss(StageLoss):
         For fitting just global root trans/orientation.
         Only computes joint/point/vert losses, i.e. no priors.
         """
+        # breakpoint()
         stats_dict = dict()
         loss = 0.0
 
@@ -226,9 +227,11 @@ class MotionLoss(SMPLLoss):
 
         loss rather than standard normal if given.
         """
+        # breakpoint()
+
         cam_pred_data["latent_pose"] = pred_data["latent_pose"]
 
-        #* Here it returns the SMPL loss
+        #* TODO: Motion Prior Fixed, input should be cam_pred_data instead of pred_data. *# 
         loss, stats_dict = super().forward(
             observed_data, cam_pred_data, nsteps, valid_mask=valid_mask
         )

@@ -55,6 +55,7 @@ class RootLossMV(StageLossMV):
         For fitting just global root trans/orientation.
         Only computes joint/point/vert losses, i.e. no priors.
         """
+        # breakpoint()
         stats_dict = dict()
         loss = 0.0
 
@@ -106,7 +107,7 @@ class RootLossMV(StageLossMV):
                         )
                     cur_loss_mv += cur_loss
                 else:
-                    continue
+                    # continue
                     observed_data = observed_data_list[num_view]
                     matching_obs_data_per_view = matching_obs_data[num_view]
 
@@ -342,7 +343,7 @@ class MotionLossMV(SMPLLossMV):
         """
         cam_pred_data["latent_pose"] = pred_data["latent_pose"]
         loss, stats_dict = super().forward(
-            observed_data_list, pred_data, nsteps, matching_obs_data, num_views, valid_mask_multi
+            observed_data_list, cam_pred_data, nsteps, matching_obs_data, num_views, valid_mask_multi
         )
 
         #valid_mask = valid_mask_multi[0] #Could be none or could be a valid mask
@@ -436,6 +437,7 @@ class MotionLossMV(SMPLLossMV):
 
 
         # make sure rolled out joints match observations too
+        #* Unused *#
         # TODO: Joints3d in observation is 45, needs to convert it back to 22 standard SMPL format. 
         if (
             "joints3d" in observed_data_list[0]

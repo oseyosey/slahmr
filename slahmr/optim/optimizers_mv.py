@@ -376,16 +376,20 @@ class RootOptimizerMV(StageOptimizerMV):
         robust_loss_type="none",
         robust_tuning_const=4.6851,
         joints2d_sigma=100,
+        opt_cams_mv=False,
+        opt_focal_mv=False,
         **kwargs,
     ):
+        self.opt_cams_mv = opt_cams_mv and model.opt_cams_mv,
+        self.opt_focal_mv = opt_focal_mv and model.opt_focal_mv,
         ## optimize global orientation and root translation in the world frame
         param_names = ["trans", "root_orient"]
         #* Optimize also the focal length (and maybe camera translation)
-        if model.opt_cams_mv:
+        if self.opt_cams_mv:
             Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS ROTATION AND TRANSLATION")
             for i in range(1, num_views):
                 param_names += [f"cam_R_{i}", f"cam_t_{i}"]
-        if model.opt_focal_mv:
+        if self.opt_focal_mv:
             Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS FOCAL LENGTH")
             for i in range(1, num_views):
                 param_names += [f"cam_f_{i}"]
@@ -443,16 +447,20 @@ class SMPLOptimizerMV(StageOptimizerMV):
         robust_loss_type="none",
         robust_tuning_const=4.6851,
         joints2d_sigma=100,
+        opt_cams_mv=False,
+        opt_focal_mv=False,
         **kwargs,
     ):
+        self.opt_cams_mv= opt_cams_mv and model.opt_cams_mv,
+        self.opt_focal_mv= opt_focal_mv and model.opt_focal_mv,
         param_names = ["trans", "root_orient", "betas", "latent_pose"]
         if model.opt_scale:
             param_names += ["world_scale"]
-        if model.opt_cams_mv:
+        if self.opt_cams_mv:
             Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS ROTATION AND TRANSLATION")
             for i in range(1, num_views):
                 param_names += [f"cam_R_{i}", f"cam_t_{i}"]
-        if model.opt_focal_mv:
+        if self.opt_focal_mv:
             Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS FOCAL LENGTH")
             for i in range(1, num_views):
                 param_names += [f"cam_f_{i}"]
@@ -620,6 +628,7 @@ class MotionOptimizerMV(StageOptimizerMV):
         return 1.0
 
     def forward_pass(self, obs_data_list, num_steps=-1):
+        # breakpoint()
         p = self.model.params
         param_names = [
             "betas",

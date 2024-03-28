@@ -173,6 +173,24 @@ class StageOptimizer(object):
             ##Important: Collect predicted outputs (latent_pose, trans, root_orient, betas, body pose) into dict
 
         res_dict = detach_all(pred_dict["world"])
+
+        obs_data["track_id"][0] = 2
+        obs_data["track_id"][1] = 3
+        # obs_data["track_id"][2] = 2
+
+        #* Color Coding *#
+        # obs_data["track_id"][0] = 1
+        # obs_data["track_id"][1] = 5
+        # obs_data["track_id"][2] = 3
+        # obs_data["track_id"][3] = 2
+        # obs_data["track_id"][4] = 4 #brick yellow
+
+        # obs_data["track_id"][3] = 4
+        # obs_data["track_id"][0] = 1
+
+        # obs_data["track_id"][1] = 2
+        # obs_data["track_id"][2] = 3
+
         scene_dict = move_to(
             prep_result_vis(
                 res_dict,
@@ -227,6 +245,7 @@ class StageOptimizer(object):
         self.cur_step = 0
         self.loss.cur_step = 0
         if out_dir_name_custom is not None:
+            self.name = out_dir_name_custom
             res_dir = os.path.join(out_dir, out_dir_name_custom)
         else:
             res_dir = os.path.join(out_dir, self.name)
@@ -507,6 +526,7 @@ class MotionOptimizer(StageOptimizer):
         return 1.0
 
     def forward_pass(self, obs_data, num_steps=-1):
+        breakpoint()
         p = self.model.params
         param_names = [
             "betas",
@@ -534,8 +554,8 @@ class MotionOptimizer(StageOptimizer):
         motion_scale = self.get_motion_scale()
         loss, stats_dict = self.loss(
             obs_data,
-            preds,
-            world_preds,
+            preds, #pred_data
+            world_preds, #cam_pred_data
             self.model.seq_len,
             valid_mask=track_mask,
             init_motion_scale=motion_scale,

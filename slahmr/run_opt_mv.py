@@ -67,7 +67,7 @@ N_STAGES = 3
 
 
 ### GAROT Implementation ###
-def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cfg_multi, device, debug=False):
+def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cfg_multi, device, debug=True):
     args = cfg.data
 
     ## setting up psuedo B and T (B, the number of sequences will change.)
@@ -182,16 +182,19 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 1...")
     ##Set up RootOptimizerMV!  ##
     args = cfg.optim.root
-    num_iters_root_mv = args.num_iters*10## Chunk size * ITER
-    optim = RootOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
+    num_iters_root_mv = args.num_iters*cfg.data.multi_view_num ## Chunk size * ITER
+    optim = RootOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, 
+                            opt_cams_mv=args.opt_cams_mv, opt_focal_mv=args.opt_focal_mv, **opts)
     optim.run(obs_data_multi, num_iters_root_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
     if debug:
         breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 2...")
-    args = cfg.optim.smooth
-    optim = SMPLOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, **opts)
-    num_iters_smooth_mv = args.num_iters*10
+    args = cfg.optim.smpl
+    optim = SMPLOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, 
+                            opt_cams_mv=args.opt_cams_mv, opt_focal_mv=args.opt_focal_mv, **opts)
+    
+    num_iters_smooth_mv = args.num_iters
     optim.run(obs_data_multi, num_iters_smooth_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
     args = cfg.optim.smooth
@@ -207,7 +210,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     # now optimize motion model
     Logger.log(f"Loading motion prior from {paths.humor}")
     motion_prior = HumorModel(**cfg.humor)
-    load_state(paths.humor, motion_prior, map_location="cpu")
+    load_state(paths.humor, motion_prior, map_location="cpu") 
     motion_prior.to(device)
     motion_prior.eval()
 
@@ -234,43 +237,40 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
 
     # initialize motion model with base model predictions
     base_params = base_model.params.get_dict() #* dict_keys(['latent_pose', 'betas', 'root_orient', 'trans']). 
+                                               #* These params all lives in the shared world frame.
                                                #* up until now the dimension looks lokay.
                                     
     model.initialize(obs_data_multi, cam_data, rt_pairs_tensor, base_params, cfg.fps) ##GAROT Implementation
     model.to(device)
 
-
-    # if "motion_chunks" in cfg.optim:
-    #     args = cfg.optim.motion_chunks
-    #     args["chunk_steps"] = args["chunk_steps"] * cfg.data.multi_view_num * 2
-    #     optim = MotionOptimizerChunksMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
-    #     #optim = MotionOptimizerMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
-    #     #num_iters = 20
-    #     optim.run(obs_data_multi, optim.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer) # hardcoded
+    if "motion_chunks" in cfg.optim:
+        args = cfg.optim.motion_chunks
+        optim = MotionOptimizerChunksMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
+        #optim = MotionOptimizerMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
+        optim.run(obs_data_multi, optim.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer) # hardcoded
 
     ##* DEBUG: Using old Motion Optimizer. **#
-    
-    model = MovingSceneModel(
-        B,
-        T,
-        body_model_multi[0],
-        pose_prior,
-        motion_prior,
-        init_motion_prior,
-        fit_gender=fit_gender,
-        **margs,
-    ).to(device)
+    # model = MovingSceneModel(
+    #     B,
+    #     T,
+    #     body_model_multi[0],
+    #     pose_prior,
+    #     motion_prior,
+    #     init_motion_prior,
+    #     fit_gender=fit_gender,
+    #     **margs,
+    # ).to(device)
 
-    # initialize motion model with base model predictions
-    base_params = base_model.params.get_dict()
-    model.initialize(obs_data_multi[0], cam_data, base_params, cfg.fps)
-    model.to(device)
+    # # initialize motion model with base model predictions
+    # base_params = base_model.params.get_dict()
+    # model.initialize(obs_data_multi[0], cam_data, base_params, cfg.fps)
+    # model.to(device)
 
-    if "motion_chunks" in cfg.optim:
-        print("RUNNING ORIGINAL MOTION CHUNKS OPTIMIZATION")
-        args = cfg.optim.motion_chunks
-        optim = MotionOptimizerChunks(model, stage_loss_weights, **args, **opts)
-        optim.run(obs_data_multi[0], optim.num_iters, out_dir, vis, writer)
+    # if "motion_chunks" in cfg.optim:
+    #     print("RUNNING ORIGINAL MOTION CHUNKS OPTIMIZATION")
+    #     args = cfg.optim.motion_chunks
+    #     optim = MotionOptimizerChunks(model, stage_loss_weights, **args, **opts)
+    #     optim.run(obs_data_multi[0], optim.num_iters, out_dir, vis, writer, out_dir_name_custom="motion_chunks_original_multi")
 
 
     return 
@@ -481,7 +481,6 @@ def main(cfg: DictConfig):
                     'tracks': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/track_preds/Camera0', 
                     'shots': '/share/kuleshov/jy928/slahmr/slahmr/output/shelf_dev2/slahmr/phalp_out/shot_idcs/Camera0.json'}
         """
-
         dataset = get_dataset_from_cfg(cfg_multi[num_view])  ## return class MultiPeopleDataset
         dataset_multi.append(dataset)
         save_track_info(dataset, out_dir_muli[num_view])
@@ -520,13 +519,14 @@ def main(cfg: DictConfig):
         
 
     ## Run SLAHMR optimization for view 1 ##
+    slahmr_view_num = 0
     device = get_device(0)
     if cfg.run_opt:
-        run_opt(cfg_multi[0], dataset_multi[0], out_dir_muli[0], device)
+        run_opt(cfg_multi[slahmr_view_num], dataset_multi[slahmr_view_num], out_dir_muli[slahmr_view_num], device)
 
     if cfg.run_vis:
         run_vis(
-            cfg_multi[0], dataset_multi[0], out_dir_muli[0], 0, **cfg.get("vis", dict())
+            cfg_multi[slahmr_view_num], dataset_multi[slahmr_view_num], out_dir_muli[slahmr_view_num], 0, **cfg.get("vis", dict())
         )
     
 
@@ -536,7 +536,7 @@ def main(cfg: DictConfig):
 
 
     ## Setting up paths for obtaining SLAHMR results ##
-    slahmr_data_init_path = f"{out_dir_muli[0]}/motion_chunks_old/" 
+    slahmr_data_init_path = f"{out_dir_muli[0]}/motion_chunks/" 
     slahmr_data_init_dict = get_highest_motion_data(slahmr_data_init_path)
     slahmr_data_init_dict = {k: torch.from_numpy(v) for k, v in slahmr_data_init_dict.items()}
     slahmr_data_init_dict = move_to(slahmr_data_init_dict, device)

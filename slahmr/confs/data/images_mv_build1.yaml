@@ -16,7 +16,7 @@ use_cams: True
 track_ids: "all"
 shot_idx: 0
 start_idx: 1
-end_idx: 150
+end_idx: 125
 split_cameras: True
 name: ${data.seq}-${data.track_ids}-shot-${data.shot_idx}-${data.start_idx}-${data.end_idx}
 sources:

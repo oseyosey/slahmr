@@ -149,7 +149,7 @@ class BaseSceneModelMV(nn.Module):
             opt_cams_mv=self.opt_cams_mv,
             opt_focal_mv=self.opt_focal_mv,
         )
-        
+
 
         ### Multi-view Set-Up ### 
         init_pose_list, init_pose_latent_list, init_betas_list, init_trans_list, init_rot_list, pred_smpl_data_list, init_appe_list = [], [], [], [], [], [], []
@@ -241,8 +241,9 @@ class BaseSceneModelMV(nn.Module):
             ## Here we are using the 4D Human results for the appearance embedding for view 0 (reference view)
             init_appe = obs_data['init_appe'] if self.use_init and 'init_appe' in obs_data else None
 
-
-            ## Recompute pred_smpl_data_list in the world frame (with updated init_trans)
+            
+            ## Recompute pred_smpl_data_list (with updated init_trans)
+            #*TODO: pred_data_world lives in the camera frame, we need to transform it to the world frame
             pred_data_world = self.pred_smpl(init_trans, init_rot, init_pose, init_betas, num_view)
             pred_smpl_data_list.append(pred_data_world)
             rt_pairs_tensor.append((R_w2c, t_w2c))
