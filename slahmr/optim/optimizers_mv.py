@@ -285,6 +285,7 @@ class StageOptimizerMV(object):
         # save initial results and vis
         self.save_results(res_dir_init, seq_name)
 
+
         for i in range(self.cur_step, num_iters):
             Logger.log("ITER: %d" % (i))
 
@@ -355,11 +356,80 @@ class StageOptimizerMV(object):
                 )
             loss.backward()
             return loss
+        
 
         self.optim.step(closure)
         if writer is not None:
             self.record_current_losses(writer)
 
+
+class CameraOptimizerMV(StageOptimizerMV):
+    name = "camera_pose_fit_multi_view"
+    stage = 0
+
+    def __init__(
+        self,
+        model,
+        all_loss_weights,
+        matching_obs_data,
+        rt_pairs_tensor,
+        num_views,
+        use_chamfer=False,
+        robust_loss_type="none",
+        robust_tuning_const=4.6851,
+        joints2d_sigma=100,
+        opt_cams_mv=False,
+        opt_focal_mv=False,
+        opt_cams=True,
+        **kwargs,
+    ):        
+        self.opt_cams_mv = opt_cams_mv and model.opt_cams_mv,
+        self.opt_focal_mv = opt_focal_mv and model.opt_focal_mv,
+        param_names = []
+        if model.opt_cams:
+            param_names += ["cam_f", "delta_cam_R"]
+        #* Optimize also the focal length (and maybe camera translation)
+        if self.opt_cams_mv:
+            Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS ROTATION AND TRANSLATION")
+            for i in range(1, num_views):
+                param_names += [f"cam_R_{i}", f"cam_t_{i}"]
+        if self.opt_focal_mv:
+            Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS FOCAL LENGTH")
+            for i in range(1, num_views):
+                param_names += [f"cam_f_{i}"]
+
+        super().__init__(self.name, model, param_names, num_views, rt_pairs_tensor, matching_obs_data, **kwargs)
+
+        self.loss = RootLossMV(
+            all_loss_weights[self.stage],
+            ignore_op_joints=OP_IGNORE_JOINTS,
+            joints2d_sigma=joints2d_sigma,
+            use_chamfer=use_chamfer,
+            robust_loss=robust_loss_type,
+            robust_tuning_const=robust_tuning_const,
+        )  
+
+    def forward_pass(self, obs_data_multi):
+        """
+        Takes in observed data, predicts the smpl parameters and returns loss
+        """
+        # Use current params to go through SMPL and get joints3d, verts3d, points3d
+        pred_data = self.model.pred_params_smpl()
+        pred_data["cameras"] = self.model.params.get_cameras()
+        
+        #* Multi-view camera and focal Optimization *#
+        pred_data["cameras_multi_mv"] = self.model.params.get_cameras_mv()
+
+        # compute data losses only
+        vis_mask_multi = []
+        for num_view in range(self.num_views):
+            vis_mask = obs_data_multi[num_view]["vis_mask"] >= 0
+            vis_mask_multi.append(vis_mask)
+        if not vis_mask_multi:
+            vis_mask_multi = None
+
+        loss, stats_dict = self.loss(obs_data_multi, pred_data, self.matching_obs_data, self.num_views, valid_mask_multi=vis_mask_multi)
+        return loss, stats_dict, pred_data
 
 class RootOptimizerMV(StageOptimizerMV):
     name = "root_fit_multi_view"
@@ -378,12 +448,18 @@ class RootOptimizerMV(StageOptimizerMV):
         joints2d_sigma=100,
         opt_cams_mv=False,
         opt_focal_mv=False,
+        opt_cams=True,
         **kwargs,
     ):
+        self.name = "root_fit_multi_view"
         self.opt_cams_mv = opt_cams_mv and model.opt_cams_mv,
         self.opt_focal_mv = opt_focal_mv and model.opt_focal_mv,
         ## optimize global orientation and root translation in the world frame
         param_names = ["trans", "root_orient"]
+
+        if opt_cams:
+            param_names += ["cam_f", "delta_cam_R"]
+
         #* Optimize also the focal length (and maybe camera translation)
         if self.opt_cams_mv:
             Logger.log(f"{self.name} OPTIMIZING MULTI-VIEW CAMERAS ROTATION AND TRANSLATION")
@@ -520,7 +596,7 @@ class SmoothOptimizerMV(StageOptimizerMV):
         param_names = ["trans", "root_orient", "betas", "latent_pose"]
         if model.opt_scale:
             param_names += ["world_scale"]
-        if model.opt_cams: ##TODO: TEmporary Solution
+        if model.opt_cams: ##TODO: Temporary Solution
             param_names += ["cam_f", "delta_cam_R"]
 
 

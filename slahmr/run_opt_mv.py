@@ -23,6 +23,7 @@ from optim.optimizers_mv import (
     SMPLOptimizerMV,
     MotionOptimizerMV,
     MotionOptimizerChunksMV,
+    CameraOptimizerMV
 )
 
 from optim.optimizers import (
@@ -187,6 +188,11 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
                             opt_cams_mv=args.opt_cams_mv, opt_focal_mv=args.opt_focal_mv, **opts)
     optim.run(obs_data_multi, num_iters_root_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
+    print("RUNNING MULTI-VIEW OPTIMIZATION Stage 1.5: Camera Pose...")
+    optim = CameraOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, 
+                            opt_cams_mv=args.opt_cams_mv, opt_focal_mv=args.opt_focal_mv, **opts)
+    optim.run(obs_data_multi, num_iters_root_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
+
     if debug:
         breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 2...")
@@ -248,30 +254,6 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
         optim = MotionOptimizerChunksMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
         #optim = MotionOptimizerMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
         optim.run(obs_data_multi, optim.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer) # hardcoded
-
-    ##* DEBUG: Using old Motion Optimizer. **#
-    # model = MovingSceneModel(
-    #     B,
-    #     T,
-    #     body_model_multi[0],
-    #     pose_prior,
-    #     motion_prior,
-    #     init_motion_prior,
-    #     fit_gender=fit_gender,
-    #     **margs,
-    # ).to(device)
-
-    # # initialize motion model with base model predictions
-    # base_params = base_model.params.get_dict()
-    # model.initialize(obs_data_multi[0], cam_data, base_params, cfg.fps)
-    # model.to(device)
-
-    # if "motion_chunks" in cfg.optim:
-    #     print("RUNNING ORIGINAL MOTION CHUNKS OPTIMIZATION")
-    #     args = cfg.optim.motion_chunks
-    #     optim = MotionOptimizerChunks(model, stage_loss_weights, **args, **opts)
-    #     optim.run(obs_data_multi[0], optim.num_iters, out_dir, vis, writer, out_dir_name_custom="motion_chunks_original_multi")
-
 
     return 
 

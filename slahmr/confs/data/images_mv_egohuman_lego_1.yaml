@@ -2,13 +2,13 @@
 
 type: images
 split: val
-root: /share/kuleshov/jy928/slahmr/slahmr/output/panop_quadra  # put your videos in root/videos/vid.mp4
+root: /share/kuleshov/jy928/slahmr/slahmr/output/egohuman_lego_pre_1  # put your videos in root/videos/vid.mp4
 video_dir: videos
 seq: Camera0
 ext: mp4
 src_path: ${data.root}/${data.video_dir}/${data.seq}.${data.ext}
 frame_opts:
-  ext: png
+  ext: jpg
   fps: 30
   start_sec: 0
   end_sec: -1
@@ -16,7 +16,7 @@ use_cams: True
 track_ids: "all"
 shot_idx: 0
 start_idx: 1
-end_idx: 180
+end_idx: 48
 split_cameras: True
 name: ${data.seq}-${data.track_ids}-shot-${data.shot_idx}-${data.start_idx}-${data.end_idx}
 sources:

@@ -89,13 +89,12 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device,
     camera_matrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
        
 
-    breakpoint()
+    # breakpoint()
     ## Matching 3D Keypoints with 2D Keypoints
     for num_view in range(1, cfg.data.multi_view_num):
         
         points_3D_world = []
         points_2D_camera = []
-        # breakpoint() 
         for t_ in range(starting_frame, min(frame, frame_slahmr)): #* Introduce starting index frame 
             ## Obtain BBoox from 2D keypoitns at camera coordiante
             joints_2d_data = joints_2d_data_mv[num_view-1][t_] ## num_view - 1 because we didn't store view 0 (world camera)
@@ -114,7 +113,6 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device,
                     points_3D_world.append(joints_3d_data[pair[0]])
                     points_2D_camera.append(joints_2d_data[pair[1]])
 
-        breakpoint()
         points_3D_world = np.vstack(points_3D_world)
         points_2D_camera = np.vstack(points_2D_camera)
         

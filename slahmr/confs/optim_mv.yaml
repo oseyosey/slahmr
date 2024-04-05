@@ -12,43 +12,27 @@ optim:
 
   root:
     num_iters: 30
+    opt_cams: True
     opt_cams_mv: True
-    opt_focal_mv: False
+    opt_focal_mv: True
 
   smpl:
     num_iters: 30
+    opt_cams: True
     opt_cams_mv: True
-    opt_focal_mv: False
+    opt_focal_mv: True
 
   smooth:
-    opt_scale: False
+    opt_scale: True
     num_iters: 60
 
   motion_chunks:
     chunk_size: 10
     init_steps: 20
     chunk_steps: 20 ## This will determine how much iterations we are going to perform
-    opt_cams: False # GAROT
+    opt_cams: True # GAROT
 
   loss_weights:
-    # joints2d: [0.0001, 0.0001, 0.0001] #joints2d: [0.001, 0.001, 0.001]
-    # bg2d: [0.0, 0.000, 0.000]       #    bg2d: [0.0, 0.0000, 0.0000]
-    # cam_R_smooth : [0.0, 1000.0, 1000.0]      
-    # cam_t_smooth : [0.0, 1000.0, 1000.0]   
-    # joints3d: [0.0, 0.0, 0.0]
-    # joints3d_smooth: [1.0, 10.0, 0.0] #joints3d_smooth: [1.0, 10.0, 0.0]
-    # joints3d_rollout: [0.0, 0.0, 0.0] 
-    # verts3d: [0.0, 0.0, 0.0]
-    # points3d: [0.0, 0.0, 0.0]
-    # pose_prior: [0.05, 0.05, 0.05] #pose_prior: [0.04, 0.04, 0.04]
-    # shape_prior: [0.05, 0.05, 0.05] #[0.05, 0.05, 0.05]
-    # motion_prior: [0.000, 0.000, 0.075] #motion_prior: [0.0, 0.0, 0.075]
-    # init_motion_prior: [0.0, 0.0, 0.075] #motion_prior: [0.0, 0.0, 0.075]
-    # joint_consistency: [0.0, 0.0, 100.0] #joint_consistency: [0.0, 0.0, 100.0]
-    # bone_length: [0.0, 0.0, 2000.0] #one_length: [0.0, 0.0, 2000.0] 
-    # contact_vel: [0.0, 0.0, 200.0] #contact_vel: [0.0, 0.0, 100.0], Ground Contact Velocity Loss
-    # contact_height: [0.0, 0.0, 20.0] #contact_height: [0.0, 0.0, 10.0]
-    # floor_reg: [0.0, 0.0, 0.167]    #floor_reg: [0.0, 0.0, 0.167]
     joints2d: [0.001, 0.001, 0.001]
     bg2d: [0.0, 0.000, 0.000]
     cam_R_smooth : [0.0, 1000.0, 1000.0]

@@ -105,7 +105,7 @@ class RootLossMV(StageLossMV):
                         cur_loss = self.joints2d_loss(
                             observed_data["joints2d"], pred_joints2d_select
                         )
-                    cur_loss_mv += cur_loss
+                    cur_loss_mv += cur_loss #* 0.5 is used to scale the loss.
                 else:
                     # continue
                     observed_data = observed_data_list[num_view]
@@ -158,8 +158,7 @@ class RootLossMV(StageLossMV):
                         cur_loss = self.joints2d_loss(
                             observed_data["joints2d"], pred_joints2d_select
                         )
-
-                # cur_loss_mv += cur_loss
+                    cur_loss_mv += cur_loss
             loss += self.loss_weights["joints2d"] * cur_loss_mv
             stats_dict["joints2d"] = cur_loss_mv
 
@@ -448,7 +447,7 @@ class MotionLossMV(SMPLLossMV):
             and self.loss_weights["joints3d_rollout"] > 0.0
         ):
             cur_loss_mv = 0.0
-            breakpoint()
+            # breakpoint()
             for num_view in range(num_views):
                 if num_view == 0:
                     observed_data = observed_data_list[0]
@@ -483,7 +482,7 @@ class MotionLossMV(SMPLLossMV):
                 for num_view in range(num_views):
                     valid_mask = valid_mask_multi[num_view]
                     ##TODO: Transformed to the observed data coordinate frame into world frame
-                    breakpoint()
+                    # breakpoint()
 
                     cur_loss = joints3d_loss(
                         observed_data_list[num_view]["joints3d"], pred_data["joints3d_rollout"], valid_mask
