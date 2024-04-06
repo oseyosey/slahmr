@@ -12,21 +12,41 @@ optim:
 
   root:
     num_iters: 30
-    opt_cams: True
-    opt_cams_mv: True
-    opt_focal_mv: True
 
   smpl:
+    num_iters: 0
+
+  smooth:
+    opt_scale: False
+    num_iters: 60
+
+  motion_chunks:
+    chunk_size: 10
+    init_steps: 20
+    chunk_steps: 20
+    opt_cams: True
+
+  root_mv:
     num_iters: 30
     opt_cams: True
     opt_cams_mv: True
     opt_focal_mv: True
 
-  smooth:
+
+##TODO: Opt and Opt_mv shares the same config. Issue. 
+  smpl_mv:
+    num_iters: 30
+    opt_cams: True
+    opt_cams_mv: True
+    opt_focal_mv: True
+
+
+##TODO: Opt and Opt_mv shares the same config. Issue. 
+  smooth_mv:
     opt_scale: True
     num_iters: 30
 
-  motion_chunks:
+  motion_chunks_mv:
     chunk_size: 10
     init_steps: 20
     chunk_steps: 20 ## This will determine how much iterations we are going to perform

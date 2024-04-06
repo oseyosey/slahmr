@@ -182,7 +182,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
         breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 1...")
     ##Set up RootOptimizerMV!  ##
-    args = cfg.optim.root
+    args = cfg.optim.root_mv
     num_iters_root_mv = args.num_iters*cfg.data.multi_view_num ## Chunk size * ITER
     optim = RootOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, 
                             opt_cams_mv=args.opt_cams_mv, opt_focal_mv=args.opt_focal_mv, **opts)
@@ -196,14 +196,14 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     if debug:
         breakpoint()
     print("RUNNING MULTI-VIEW OPTIMIZATION Stage 2...")
-    args = cfg.optim.smpl
+    args = cfg.optim.smpl_mv
     optim = SMPLOptimizerMV(base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, 
                             opt_cams_mv=args.opt_cams_mv, opt_focal_mv=args.opt_focal_mv, **opts)
     
     num_iters_smooth_mv = args.num_iters
     optim.run(obs_data_multi, num_iters_smooth_mv, out_dir_multi, vis_multi=vis_multi, writer=writer)
 
-    args = cfg.optim.smooth
+    args = cfg.optim.smooth_mv
     optim = SmoothOptimizerMV(
         base_model, stage_loss_weights, matching_obs_data, rt_pairs_tensor, cfg.data.multi_view_num, opt_scale=args.opt_scale, **opts
     )
@@ -250,7 +250,7 @@ def run_opt_mv(cfg, dataset_multi, rt_pairs, out_dir_multi, slahmr_data_init, cf
     model.to(device)
 
     if "motion_chunks" in cfg.optim:
-        args = cfg.optim.motion_chunks
+        args = cfg.optim.motion_chunks_mv
         optim = MotionOptimizerChunksMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
         #optim = MotionOptimizerMV(model, stage_loss_weights, cfg.data.multi_view_num, rt_pairs_tensor, matching_obs_data, **args, **opts)
         optim.run(obs_data_multi, optim.num_iters, out_dir_multi, vis_multi=vis_multi, writer=writer) # hardcoded
@@ -411,11 +411,9 @@ def run_opt(cfg, dataset, out_dir, device):
         optim = MotionOptimizer(model, stage_loss_weights, **args, **opts)
         optim.run(obs_data, args.num_iters, out_dir, vis, writer)
 
-
 @hydra.main(version_base=None, config_path="confs", config_name="config_mv.yaml")
 def main(cfg: DictConfig):
     OmegaConf.register_new_resolver("eval", eval)
-
 
     ### First-stage ###
     # 1. Run phalp for all views

@@ -55,12 +55,9 @@ class RootLoss(StageLoss):
         For fitting just global root trans/orientation.
         Only computes joint/point/vert losses, i.e. no priors.
         """
-        # breakpoint()
         stats_dict = dict()
         loss = 0.0
 
-
-        ## joints3D, verts3D, and points3D are not used for now, their loss weights are 0. ##
         # Joints in 3D space
         if (
             "joints3d" in observed_data
@@ -97,8 +94,6 @@ class RootLoss(StageLoss):
             loss += self.loss_weights["points3d"] * cur_loss
             stats_dict["points3d"] = cur_loss
 
-
-        ##TODO 
         # 2D re-projection loss
         if (
             "joints2d" in observed_data
@@ -227,11 +222,7 @@ class MotionLoss(SMPLLoss):
 
         loss rather than standard normal if given.
         """
-        # breakpoint()
-
         cam_pred_data["latent_pose"] = pred_data["latent_pose"]
-
-        #* TODO: Motion Prior Fixed, input should be cam_pred_data instead of pred_data. *# 
         loss, stats_dict = super().forward(
             observed_data, cam_pred_data, nsteps, valid_mask=valid_mask
         )
@@ -275,13 +266,11 @@ class MotionLoss(SMPLLoss):
             )  # must scale since doesn't scale with more steps
             stats_dict["init_motion_prior"] = cur_loss
 
-        #TODO: 45 Joints and 22 Joints OP issue.
         # make sure joints consistent between SMPL and direct motion prior output
         if (
             "joints3d_rollout" in pred_data
             and "joints3d" in pred_data
             and self.loss_weights["joint_consistency"] > 0.0
-            and False
         ):
             cur_loss = joint_consistency_loss(
                 pred_data["joints3d"],

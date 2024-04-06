@@ -174,22 +174,8 @@ class StageOptimizer(object):
 
         res_dict = detach_all(pred_dict["world"])
 
-        obs_data["track_id"][0] = 2
-        obs_data["track_id"][1] = 3
-        # obs_data["track_id"][2] = 2
-
         #* Color Coding *#
         # obs_data["track_id"][0] = 1
-        # obs_data["track_id"][1] = 5
-        # obs_data["track_id"][2] = 3
-        # obs_data["track_id"][3] = 2
-        # obs_data["track_id"][4] = 4 #brick yellow
-
-        # obs_data["track_id"][3] = 4
-        # obs_data["track_id"][0] = 1
-
-        # obs_data["track_id"][1] = 2
-        # obs_data["track_id"][2] = 3
 
         scene_dict = move_to(
             prep_result_vis(
@@ -439,8 +425,10 @@ class SmoothOptimizer(StageOptimizer):
         param_names = ["trans", "root_orient", "betas", "latent_pose"]
         if model.opt_scale:
             param_names += ["world_scale"]
-        if model.opt_cams:
-            param_names += ["cam_f", "delta_cam_R"]
+
+        #* ISSUE: Will create nans if we have opt_cams *#
+        # if model.opt_cams:
+        #     param_names += ["cam_f", "delta_cam_R"]
 
         super().__init__(self.name, model, param_names, **kwargs)
 
@@ -495,9 +483,11 @@ class MotionOptimizer(StageOptimizer):
         if model.opt_scale:
             param_names += ["world_scale"]
 
-        if self.opt_cams:
-            Logger.log(f"{self.name} OPTIMIZING CAMERAS")
-            param_names += ["delta_cam_R", "cam_f"]
+        
+        #* Issues: Will create nans if we enable these *#
+        # if self.opt_cams:
+        #     Logger.log(f"{self.name} OPTIMIZING CAMERAS")
+        #     param_names += ["delta_cam_R", "cam_f"]
 
         super().__init__(self.name, model, param_names, **kwargs)
         self.set_loss(model, all_loss_weights[self.stage], **kwargs)
