@@ -120,6 +120,7 @@ def run_pnp(cfg, keypoints_2d_path_mv, keypoints_3d_path, cv_match_path, device,
         n = int(len(points_3D_world) / (25*4))
 
         ## Need additional parameter finetuning
+        breakpoint()
         refined_pose = ransac_pnp_robust(points_3D_world, points_2D_camera, camera_matrix, n=n, k=5000, d=25 * (n/2), percentile=95, sample_ratio=0.8, verbose=True)
         rt_pairs.append(refined_pose)
 

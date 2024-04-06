@@ -24,7 +24,7 @@ optim:
 
   smooth:
     opt_scale: True
-    num_iters: 60
+    num_iters: 30
 
   motion_chunks:
     chunk_size: 10
